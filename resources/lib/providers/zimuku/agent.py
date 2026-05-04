@@ -6,7 +6,6 @@ from ..base import BaseAgent
 from ..common import get_filename_from_cd, save_and_unpack, SUBTITLE_EXTS, ARCHIVE_EXTS
 
 class ZimukuAgent(BaseAgent):
-    FILE_MIN_SIZE = 1024
 
     def __init__(self, base_url, dl_location, logger, unpacker):
         super().__init__(base_url, "https://zimuku.org", dl_location, logger, unpacker)
@@ -203,9 +202,10 @@ class ZimukuAgent(BaseAgent):
                 filename = get_filename_from_cd(resp.headers.get('Content-Disposition'), url=file_url)
                 if not filename: continue
                 file_data = resp.content
-                if len(file_data) > self.FILE_MIN_SIZE: break
+                if file_data: break
             except Exception: pass
-        if not filename or not file_data or len(file_data) <= self.FILE_MIN_SIZE: return [], [], []
+        if not filename or not file_data:
+            return [], [], []
         dot = filename.rfind(".")
         if dot != -1: filename = filename[:dot] + filename[dot:].lower()
         if filename.endswith(SUBTITLE_EXTS) or filename.endswith(ARCHIVE_EXTS):

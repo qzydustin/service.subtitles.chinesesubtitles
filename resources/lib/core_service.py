@@ -65,16 +65,50 @@ class Unpacker:
         return archive_utils.unpack(path, logger=self.logger)
 
 
+_SRC_RANK = {'official': 0, 'reprint': 1, 'original': 2, 'ai': 3, 'machine': 4}
+
+
+def _sort_key(sub):
+    """排序：简英 > 简 > 繁 > 其他；同语言内 官方 > 精修 > 原创 > AI > 机翻"""
+    tags = sub.get('tags', {})
+    langs = set(tags.get('lang', []))
+    is_bilingual = tags.get('bilingual', False)
+    if 'chs' in langs and is_bilingual:
+        lang_tier = 0
+    elif 'chs' in langs:
+        lang_tier = 1
+    elif 'cht' in langs:
+        lang_tier = 2
+    else:
+        lang_tier = 3
+    src_tier = min((_SRC_RANK.get(s, 5) for s in tags.get('source', [])), default=5)
+    return (lang_tier, src_tier)
+
+
 def Search(items):
     if items['mansearch']:
         search_str = items['mansearchstr']
     else:
         is_tv = bool(items.get('tvshow'))
         search_str = items['tvshow'] if is_tv else items['title']
+
+    icon = os.path.join(__addon__.getAddonInfo('path'), 'resources', 'icon.png')
+    xbmcgui.Dialog().notification(__scriptname__, '正在搜索...', icon, 2000)
+
     logger.log(sys._getframe().f_code.co_name, "Search for [%s], item: %s" %
                (search_str, items), level=xbmc.LOGINFO)
 
-    candidate = get_candidate(search_str, items, logger)
+    imdb_id = (items.get('imdbnumber') or '').strip()
+    if imdb_id and not items.get('mansearch') and not items.get('tvshow'):
+        candidate = {
+            'id': imdb_id,
+            'source': 'imdb',
+            'type': 'tv' if items.get('tvshow') else 'movie',
+        }
+        logger.log(sys._getframe().f_code.co_name,
+                   "Using IMDB ID: %s, skip Douban search" % imdb_id, level=xbmc.LOGINFO)
+    else:
+        candidate = get_candidate(search_str, items, logger)
     if not candidate:
         return []
     subtitle_list = []
@@ -94,6 +128,7 @@ def Search(items):
     if len(subtitle_list) != 0:
         settings = get_filter_settings(__addon__)
         subtitle_list = apply_filters(subtitle_list, settings, logger)
+        subtitle_list.sort(key=_sort_key)
         add_subtitles(subtitle_list, __scriptid__)
     else:
         logger.log(sys._getframe().f_code.co_name, "Subtitle Not Found: %s" %
@@ -137,7 +172,8 @@ def handle_params(params):
             'tvshow': xbmc.getInfoLabel("VideoPlayer.TVshowtitle"),
             'title': xbmc.getInfoLabel("VideoPlayer.Title"),
             'filename': xbmc.getInfoLabel("Player.Filename"),
-            'path': xbmc.getInfoLabel("Player.Folderpath")
+            'path': xbmc.getInfoLabel("Player.Folderpath"),
+            'imdbnumber': xbmc.getInfoLabel("VideoPlayer.UniqueID(imdb)"),
         }
 
         if 'searchstring' in params:

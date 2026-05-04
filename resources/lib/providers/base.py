@@ -32,7 +32,7 @@ class BaseAgent:
             return None
 
     def _build_language_meta(self, tags):
-        """根据 tags 构建 Kodi 语言元数据"""
+        """根据 tags 构建 Kodi 语言元数据（label 必须用标准名，Kodi 用它查 ISO 639-1）"""
         langs = tags.get('lang', [])
         if 'eng' in langs and 'chs' not in langs and 'cht' not in langs:
             return "English", "en", "0"

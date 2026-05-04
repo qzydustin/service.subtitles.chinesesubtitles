@@ -73,9 +73,36 @@ class SubHDAgent(BaseAgent):
                 results.append(self._build_result(link.get_text().strip(), self.BASE_URL + href, tags))
         return results
 
+    def _resolve_imdb(self, imdb_id):
+        """Search SubHD by IMDB ID and return the douban_id."""
+        search_url = f"{self.BASE_URL}/search/{imdb_id}"
+        content = self.get_page(search_url)
+        if not content:
+            return None
+        soup = BeautifulSoup(content, 'html.parser')
+        for a in soup.find_all('a', href=True):
+            m = re.search(r'/d/(\d+)', a.get('href', ''))
+            if m:
+                return m.group(1)
+        if soup.select_one('div.bg-white.shadow-sm.rounded-3.mb-5'):
+            for a in soup.find_all('a', href=True):
+                m = re.search(r'douban\.com/subject/(\d+)', a.get('href', ''))
+                if m:
+                    return m.group(1)
+        return None
+
     def search(self, items, candidate=None):
         """搜索字幕"""
-        if not candidate or not candidate.get('id'): return []
+        if not candidate:
+            return []
+        if candidate.get('source') == 'imdb':
+            douban_id = self._resolve_imdb(candidate['id'])
+            if not douban_id:
+                self.log(f"SubHD: IMDB {candidate['id']} not found", 2)
+                return []
+            candidate = {**candidate, 'id': douban_id, 'source': 'douban'}
+        if not candidate.get('id'):
+            return []
         url = f"{self.BASE_URL}/d/{candidate.get('id')}"
         content = self.get_page(url)
         if not content: return []

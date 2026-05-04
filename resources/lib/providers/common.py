@@ -65,12 +65,30 @@ def _shorten_filenames(sub_name_list):
             return sub_name_list
     return sub_name_list
 
+def _lang_label(tags):
+    """根据语言标签生成简/繁/英标注"""
+    langs = set(tags.get('lang', []))
+    is_bilingual = tags.get('bilingual', False)
+    if 'chs' in langs and 'cht' in langs:
+        base = "[简繁]"
+    elif 'chs' in langs:
+        base = "[简]"
+    elif 'cht' in langs:
+        base = "[繁]"
+    elif 'eng' in langs:
+        base = "[英]"
+    else:
+        base = ""
+    if is_bilingual and 'eng' in langs and base not in ("", "[英]"):
+        base = base[:-1] + "英]"
+    return base
+
 def build_subtitle_label(tags, provider=None, filename=None):
     final_label = ""
     if provider: final_label += f"[{provider}]"
     prod = tags.get('production')
     if prod: final_label += f"[{prod}]"
-    final_label += "[双语]" if tags.get('bilingual') else "[单语]"
+    final_label += _lang_label(tags)
     for key, label in SRC_MAP.items():
         if key in tags.get('source', []):
             final_label += label
@@ -85,13 +103,53 @@ def build_subtitle_label(tags, provider=None, filename=None):
     if filename: final_label += f" {filename}"
     return final_label
 
+def _is_fake_subtitle(filepath):
+    """检测是否为虚假字幕（< 10KB 且包内无有效字幕文件）"""
+    import os as _os, urllib.parse, xbmcvfs
+    ext = filepath.lower()
+    try:
+        if _os.path.getsize(filepath) >= 10240:
+            return False
+    except Exception:
+        return False
+    # 直接是字幕格式
+    if ext.endswith(SUBTITLE_EXTS):
+        return False
+    # 压缩包：用 VFS 列出内容，检查是否有字幕文件
+    if ext.endswith(('.zip', '.rar', '.7z')):
+        path = filepath.replace('\\', '/')
+        real = xbmcvfs.translatePath(path)
+        enc = urllib.parse.quote_plus(real)
+        proto = 'archive' if ext.endswith('.7z') else ext[1:]
+        vfs_url = f"{proto}://{enc}"
+        try:
+            dirs, files = xbmcvfs.listdir(vfs_url)
+            if any(f.lower().endswith(SUBTITLE_EXTS) for f in files):
+                return False
+            # drill into subdirectory
+            if not files and dirs:
+                dirs2, files2 = xbmcvfs.listdir(vfs_url + '/' + dirs[0])
+                if any(f.lower().endswith(SUBTITLE_EXTS) for f in files2):
+                    return False
+        except Exception:
+            pass
+    return True
+
+
 def save_and_unpack(download_location, unpacker, filename, data):
     filepath = os.path.join(download_location, filename)
     with open(filepath, 'wb') as f:
         f.write(data)
     target_path, files = unpacker.unpack(filepath)
     if not files:
+        if _is_fake_subtitle(filepath):
+            import xbmcaddon, xbmcgui
+            icon = os.path.join(xbmcaddon.Addon().getAddonInfo('path'), 'resources', 'icon.png')
+            xbmcgui.Dialog().notification(
+                '字幕下载', '此字幕非有效字幕文件或实际字幕文件需到网盘下载，请选择其他字幕',
+                icon, 4000)
+            return [], [], []  # 不返回无效项目，保持下载窗口打开
         return [filename], [filename], [filepath]
-    full_paths = [os.path.join(target_path, f) for f in files]
+    full_paths = [target_path + '/' + f for f in files]
     short_sub_name_list = _shorten_filenames(files)
     return files, short_sub_name_list, full_paths
