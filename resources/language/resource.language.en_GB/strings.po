@@ -21,16 +21,6 @@ msgctxt "#30252"
 msgid "Format Filters"
 msgstr ""
 
-
-
-
-
-msgctxt "#30240"
-msgid "Include year in search"
-msgstr ""
-
-
-
 msgctxt "#30300"
 msgid "Proxy"
 msgstr ""
@@ -45,10 +35,6 @@ msgstr ""
 
 msgctxt "#30312"
 msgid "Proxy server URL"
-msgstr ""
-
-msgctxt "#30901"
-msgid "Choose subtitle"
 msgstr ""
 
 msgctxt "#30902"
@@ -114,10 +100,6 @@ msgstr "Include Traditional Chinese"
 msgctxt "#30282"
 msgid "Include English"
 msgstr "Include English"
-
-msgctxt "#30410"
-msgid "Add the year to the search query for more accurate matches."
-msgstr ""
 
 msgctxt "#30412"
 msgid "Use Kodi's global proxy settings."

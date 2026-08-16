@@ -9,10 +9,6 @@ msgctxt "#30200"
 msgid "Subtitle Filters"
 msgstr "字幕筛选"
 
-msgctxt "#30240"
-msgid "Include year in search"
-msgstr "搜索时包含年份"
-
 msgctxt "#30300"
 msgid "Proxy"
 msgstr "代理"
@@ -28,10 +24,6 @@ msgstr "启用自定义代理"
 msgctxt "#30312"
 msgid "Proxy server URL"
 msgstr "代理服务器地址"
-
-msgctxt "#30901"
-msgid "Choose subtitle"
-msgstr "请选择压缩包中的字幕"
 
 msgctxt "#30902"
 msgid "Invalid subtitle file, please choose another"
@@ -116,10 +108,6 @@ msgstr "语言筛选"
 msgctxt "#30252"
 msgid "Format Filters"
 msgstr "格式筛选"
-
-msgctxt "#30410"
-msgid "Add the year to the search query for more accurate matches."
-msgstr "在搜索关键词中加入年份，提升匹配精准度。"
 
 msgctxt "#30412"
 msgid "Use Kodi's global proxy settings."

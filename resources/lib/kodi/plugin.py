@@ -192,7 +192,7 @@ def current_query():
     # (substring level), so "中文 英文" hits exactly and rescues single
     # common-word titles ("小丑回魂 It" -> the right 4 works, "It" -> 123
     # junk rows); single-language titles follow as zero-result fallbacks
-    # in the order Chinese (usually douban-aligned) then original
+    # in the order Chinese (how the sites name works) then original
     if display and original and display != original:
         return WorkQuery(title=f"{display} {original}",
                          alt_titles=[display, original], year=year)
