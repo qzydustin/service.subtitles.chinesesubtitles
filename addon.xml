@@ -4,7 +4,7 @@
         <import addon="xbmc.python" version="3.0.0"/>
         <import addon="script.module.beautifulsoup4" version="4.12.2"/>
         <import addon="vfs.rar" version="21.0.2"/>
-        <import addon="vfs.libarchive" version="21.0.2" optional="true"/>
+        <import addon="vfs.libarchive" version="21.0.2"/>
         <import addon="script.module.requests" version="2.31.0"/>
     </requires>
     <extension point="xbmc.subtitle.module" library="resources/lib/addon_entry.py" />
