@@ -7,27 +7,31 @@ on:
   workflow_dispatch: {}
 
 permissions:
-  contents: read
+  contents: write  # create the GitHub release and attach the zips
   pages: write
   id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
 
 jobs:
   build-and-publish:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Read addon version
         id: addon
         shell: bash
         run: |
           set -euo pipefail
-          # The XML declaration also contains version="1.0", so only extract the addon's version attr.
-          version="$(sed -n 's/.*<addon[^>]*version="\([^"]*\)".*/\1/p' addon.xml | head -1)"
+          version="$(python3 -c "import xml.etree.ElementTree as t; print(t.parse('addon.xml').getroot().get('version') or '')")"
           if [[ -z "${version}" ]]; then
             echo "Failed to read version from addon.xml" >&2
             exit 1
@@ -51,17 +55,25 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          chmod +x ./package.sh
-          ./package.sh
+          bash package.sh
           ls -lah dist
 
       - name: Build Kodi repository
         shell: bash
         run: |
           set -euo pipefail
-          pip install markdown
+          python3 -m pip install --disable-pip-version-check markdown
           python3 scripts/build_kodi_repo.py
           find dist/kodi-repo -maxdepth 5 -type f -print
+
+      - name: Attach zips to the GitHub release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          fail_on_unmatched_files: true
+          files: |
+            dist/service.subtitles.chinesesubtitles-*.zip
+            dist/kodi-repo/repo/zips/repository.chinesesubtitles/repository.chinesesubtitles-*.zip
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
