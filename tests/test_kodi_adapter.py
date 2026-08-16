@@ -55,6 +55,27 @@ class FakePlayer:
         return self.path
 
 
+class FakeAddon:
+    def __init__(self, settings):
+        self._settings = settings
+
+    def getSetting(self, key):
+        return self._settings.get(key, "")
+
+
+def addon_with(**overrides):
+    """Addon whose settings are all on, except the overrides
+    (given as unprefixed keys like lang_eng=False)."""
+    ids = (["filter_bilingual"]
+           + [f"filter_src_{k}" for k in plugin.SOURCES]
+           + [f"filter_lang_{k}" for k in plugin.LANGS]
+           + [f"filter_fmt_{k}" for k in plugin.FORMATS])
+    values = {i: "true" for i in ids}
+    values["filter_bilingual"] = "false"  # bilingual-only stays off by default
+    values.update({f"filter_{k}": "false" for k in overrides})
+    return FakeAddon(values)
+
+
 def with_player(monkeypatch, player):
     monkeypatch.setattr(xbmc, "Player", lambda: player)
 
@@ -160,3 +181,22 @@ def test_fanout_folder_follows_storage_mode(monkeypatch):
     assert plugin.fanout_folder("/videos/Show") == "/videos/Show"
     monkeypatch.setattr(plugin, "jsonrpc", lambda method, params: {})  # lookup failed
     assert plugin.fanout_folder("/videos/Show") == "/videos/Show"
+
+
+def test_filter_settings_drop_the_filter_prefix(monkeypatch):
+    monkeypatch.setattr(plugin, "__addon__", addon_with(lang_eng=False, src_machine=False))
+    settings = plugin.filter_settings()
+    assert settings["lang_eng"] is False and settings["lang_chs"] is True
+    assert settings["src_machine"] is False and settings["src_official"] is True
+    assert not any(k.startswith("filter_") for k in settings)
+
+
+def test_filter_settings_drive_core_filter(monkeypatch):
+    # regression: the adapter's dict must be readable by core's apply_filters
+    from core.filter import apply_filters
+    from core.models import Subtitle, Tags
+
+    monkeypatch.setattr(plugin, "__addon__", addon_with(src_machine=False))
+    good = Subtitle("a.srt", "l1", Tags(lang=["chs"], fmt=["srt"], source=["official"]))
+    machine = Subtitle("b.srt", "l2", Tags(lang=["chs"], fmt=["srt"], source=["machine"]))
+    assert apply_filters([good, machine], plugin.filter_settings()) == [good]

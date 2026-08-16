@@ -86,12 +86,13 @@ def clean_temp():
 
 
 def filter_settings():
-    """Read addon settings into the plain dict core's filter expects."""
-    keys = (["filter_bilingual"]
-            + [f"filter_src_{k}" for k in SOURCES]
-            + [f"filter_lang_{k}" for k in LANGS]
-            + [f"filter_fmt_{k}" for k in FORMATS])
-    return {k: __addon__.getSetting(k) == "true" for k in keys}
+    """Read addon settings into the plain dict core's filter expects
+    (dropping the settings ids' filter_ prefix)."""
+    keys = (["bilingual"]
+            + [f"src_{k}" for k in SOURCES]
+            + [f"lang_{k}" for k in LANGS]
+            + [f"fmt_{k}" for k in FORMATS])
+    return {k: __addon__.getSetting("filter_" + k) == "true" for k in keys}
 
 
 # ---- actions ----
@@ -276,7 +277,7 @@ def autosave(result):
     siblings = [os.path.splitext(f)[0] for f in files if f.lower().endswith(VIDEO_EXTS)]
     mapping = rename_map(result.files, stem, siblings, season=episode_marker(stem)[0])
     settings = filter_settings()
-    preferred = tuple(l for l in LANGS if settings.get(f"filter_lang_{l}")) or LANGS
+    preferred = tuple(l for l in LANGS if settings.get(f"lang_{l}")) or LANGS
     picked = playback_pick(mapping, stem, preferred=preferred)
 
     folder = fanout_folder(video_folder)
