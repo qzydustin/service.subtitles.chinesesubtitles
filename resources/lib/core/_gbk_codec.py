@@ -38,7 +38,11 @@ def decode_gbk(raw_bytes):
 
 
 def fix_zip_filename(name):
-    """Recover GBK-encoded filename that was mis-decoded as cp437 by zipfile."""
+    """Recover GBK-encoded filename that was mis-decoded as cp437 by zipfile.
+
+    Tries the stdlib gb18030 (a GBK superset) first; the bundled table is
+    the fallback for Kodi platforms (CoreELEC/LibreELEC) whose stripped
+    Python ships without CJK codecs — see PR #1 / commit ac869b2."""
     if all(ord(c) <= 127 for c in name):
         return name
     try:
