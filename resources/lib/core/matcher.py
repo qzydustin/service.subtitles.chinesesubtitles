@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Title parsing and matching for aggregating works found on both sites."""
+"""Title and filename parsing: seasons, years, release names."""
 import re
 
 CN_NUM = {"一": 1, "二": 2, "三": 3, "四": 4, "五": 5,
@@ -10,8 +10,6 @@ _WORD_SEASON = r'season\s*(\d+)'
 SEASON_RE = re.compile(f'{_CN_SEASON}|{_WORD_SEASON}', re.I)
 _CENTURY = r'(?:19|20)\d{2}'
 YEAR_RE = re.compile(rf'[（(]\s*({_CENTURY})\s*[)）]')
-
-TITLE_STOPWORDS = {"the"}  # ignored when comparing site titles
 
 
 def season_number(raw):
@@ -28,7 +26,7 @@ def season_number(raw):
 
 
 def parse_meta(title):
-    """Title -> (normalized token set, season str, year str)."""
+    """Title -> (season str, year str) as carried by zimuku work titles."""
     year = season = ""
     m = YEAR_RE.search(title)
     if m:
@@ -38,23 +36,7 @@ def parse_meta(title):
         season = str(season_number(m.group(1) or m.group(2)))
         if season == "0":  # unparsable season counts (garbage, 百 and up) mean none
             season = ""
-        title = SEASON_RE.sub(" ", title)
-    tokens = set(re.sub(r"[^\w\s]", " ", title.lower()).split()) - TITLE_STOPWORDS
-    return tokens, season, year
-
-
-def works_match(a, b):
-    """Whether two site titles refer to the same work (season equal, years
-    compatible, same normalized token set). Immune to word order, punctuation
-    and case; a missing season on either side means season must be empty on
-    both ('movie' vs 'season 2' never connects)."""
-    ta, sa, ya = parse_meta(a)
-    tb, sb, yb = parse_meta(b)
-    if sa != sb:
-        return False
-    if ya and yb and ya != yb:
-        return False
-    return bool(ta) and ta == tb
+    return season, year
 
 
 # ---- filename parsing (fallback for unscraped media) ----

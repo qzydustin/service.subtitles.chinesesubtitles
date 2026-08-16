@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Live tests for the SubHD provider: work discovery, TV search, download."""
+"""Live tests for the SubHD provider: direct /d/{douban id} search, download."""
 import os
 import sys
 import tempfile
@@ -9,42 +9,23 @@ lib_dir = os.path.join(base_dir, "resources", "lib")
 if lib_dir not in sys.path:
     sys.path.insert(0, lib_dir)
 
-from core.models import WorkQuery, build_label
+from core.models import Work, WorkQuery, build_label
 from core.subhd import SubhdProvider
 
-
-def test_subhd_find_works():
-    provider = SubhdProvider(log=lambda msg: print(f"  [subhd] {msg}"))
-
-    print("\n=== SubHD find_works: 盗梦空间 ===")
-    works = provider.find_works(WorkQuery(title="盗梦空间"))
-    assert works, "SubHD work search returned no results."
-    assert any("Inception" in w.title for w in works), \
-        f"No Inception work among: {[w.title for w in works]}"
-    print(f"Total works: {len(works)}")
-    for i, w in enumerate(works[:5], start=1):
-        print(f"{i}. {w.title} | season={w.season!r} | anchor={w.anchors['subhd'][0]}")
-
-    print("\n=== SubHD find_works: 绝命毒师 (pagination must reach all seasons) ===")
-    works = provider.find_works(WorkQuery(title="绝命毒师"))
-    seasons = {w.season for w in works if w.season}
-    assert {"1", "2", "3", "4", "5"} <= seasons, \
-        f"Missing seasons, got {sorted(seasons)} among {len(works)} works"
-    print(f"Total works: {len(works)}, seasons found: {sorted(seasons)}")
+# Friends S1's Douban subject id: SubHD serves work pages under it directly
+FRIENDS_S1_DOUBAN = "1393859"
 
 
 def test_subhd_search_and_download():
     log = lambda msg: print(f"  [subhd] {msg}")
     provider = SubhdProvider(log=log)
 
-    print("\n=== SubHD search: Breaking Bad S02E05 ===")
-    query = WorkQuery(title="绝命毒师", season="2", episode="5", is_tv=True)
-    works = [w for w in provider.find_works(query) if w.season == "2"]
-    assert works, "Season 2 work not found."
-    print(f"Work: {works[0].title} | anchor={works[0].anchors['subhd'][0]}")
-
-    results = provider.search(query, works[0])
-    assert results, "SubHD search returned no subtitles."
+    print("\n=== SubHD direct /d/{douban id}: Friends S1 ===")
+    query = WorkQuery(title="老友记 Friends", season="1", is_tv=True)
+    work = Work(title="老友记 第一季 Friends", season="1",
+                anchors={"subhd": [f"/d/{FRIENDS_S1_DOUBAN}"]})
+    results = provider.search(query, work)
+    assert results, "SubHD direct douban-id page returned no subtitles."
     print(f"Total subtitles found: {len(results)}")
     for i, s in enumerate(results[:5]):
         print(f"[{i:2}] {build_label(s.tags, filename=s.filename)}")

@@ -147,9 +147,8 @@ class ZimukuProvider:
         capped at MAX_SEARCH_PAGES. Stops only on a failed or empty result
         page — a page of already-seen entries does not end it early.
 
-        Measured: like SubHD, multi-word queries are token-AND matched with
-        stopwords ignored, and %20 vs + space encoding are equivalent —
-        send titles verbatim."""
+        Measured: multi-word queries are token-AND matched and %20 vs +
+        space encoding are equivalent — send titles verbatim."""
         if not query.title:
             return []
         base = f"{self.BASE_URL}/search?q={urllib.parse.quote(query.title)}&chost=zimuku.org"
@@ -176,7 +175,7 @@ class ZimukuProvider:
                 title = link.get_text(strip=True)
                 if not title:
                     continue
-                _, season, year = parse_meta(title)
+                season, year = parse_meta(title)
                 works.append(Work(title=title, season=season, year=year,
                                   anchors={"zimuku": [subs_url]}))
         return works
@@ -186,20 +185,32 @@ class ZimukuProvider:
     def search(self, query, work):
         """List subtitles for every /subs/{id}.html page the work anchors."""
         results = []
-        production = "剧集" if query.is_tv else "电影"
-        matches_episode = self._episode_filter(query.season, query.episode)
         for subs_url in (work.anchors.get("zimuku") or []) if work else []:
-            data = self._get(subs_url)
-            if not data:
-                continue
-            box = BeautifulSoup(data, "html.parser").select_one("div.subs.box.clearfix")
-            if not box or not box.tbody:
-                continue
+            results += self.work_page(query, subs_url)[1]
+        return results
+
+    def work_page(self, query, subs_url):
+        """One GET of a work page -> (douban id, episode-filtered subtitles).
+
+        The douban id bridges the work to SubHD and the same page holds the
+        subtitle table, so resolution fetches it once and preloads both.
+        """
+        data = self._get(subs_url)
+        if not data:
+            return "", []
+        text = data.decode("utf-8", "replace")
+        m = re.search(r"douban\.com/(?:subject|movie)/(\d+)", text)
+        douban = m.group(1) if m else ""
+        subs = []
+        box = BeautifulSoup(data, "html.parser").select_one("div.subs.box.clearfix")
+        if box and box.tbody:
+            production = "剧集" if query.is_tv else "电影"
+            matches_episode = self._episode_filter(query.season, query.episode)
             for row in reversed(box.tbody.find_all("tr")):
                 include, collection = matches_episode(row.a.text)
                 if include:
-                    results.append(self._parse_row(row, production, collection))
-        return results
+                    subs.append(self._parse_row(row, production, collection))
+        return douban, subs
 
     def _parse_row(self, row, production, collection):
         link = urllib.parse.urljoin(self.BASE_URL, row.a["href"])

@@ -12,7 +12,7 @@ from core import service
 from core.archive import shorten_names
 from core.filter import apply_filters
 from core.http import filename_from_headers
-from core.matcher import parse_filename, parse_meta, season_number, works_match
+from core.matcher import parse_filename, parse_meta, season_number
 from core.models import Subtitle, Tags, Work, WorkQuery, build_label, language_meta
 
 
@@ -32,37 +32,15 @@ ALL_TRUE = {
 
 # ---- matcher ----
 
-def test_match_links_word_order():
-    assert works_match("绝命毒师电影：续命之徒", "续命之徒：绝命毒师电影")
+def test_parse_meta_season_and_year():
+    season, year = parse_meta("绝命毒师 第二季 Breaking Bad")
+    assert season == "2" and year == ""
 
 
-def test_match_season_must_be_equal():
-    assert not works_match("绝命毒师 第一季 Breaking Bad", "绝命毒师 第二季 Breaking Bad")
-    # a seasonless title never connects to a seasoned one
-    assert not works_match("绝命毒师 Breaking Bad", "绝命毒师 第二季 Breaking Bad")
-
-
-def test_match_year_conflict_blocks():
-    assert not works_match("绝命毒师 第二季 Breaking Bad (2009)",
-                           "绝命毒师 第二季 Breaking Bad (2010)")
-
-
-def test_match_one_sided_year_ok():
-    assert works_match("绝命毒师 第二季 Breaking Bad (2009)",
-                       "绝命毒师 第二季 Breaking Bad")
-
-
-def test_match_chinese_numeral_season():
-    tokens, season, year = parse_meta("绝命毒师 第二季 Breaking Bad")
-    assert season == "2" and year == "" and tokens == {"绝命毒师", "breaking", "bad"}
-    assert works_match("绝命毒师 第二季 Breaking Bad", "绝命毒师 Season 2 Breaking Bad")
-
-
-def test_match_compound_numeral_season():
+def test_parse_meta_compound_numeral_season():
     # Chinese-numeral compounds through 九十九 parse like their digit forms
-    _, season, _ = parse_meta("神秘博士 第十一季")
+    season, _ = parse_meta("神秘博士 第十一季")
     assert season == "11"
-    assert works_match("神秘博士 第十一季", "神秘博士 Season 11")
 
 
 def test_season_number_compounds():
@@ -75,23 +53,10 @@ def test_season_number_compounds():
     assert season_number("百") == 0 and season_number("十一一") == 0
 
 
-def test_match_normalizes_punctuation_and_case():
-    assert works_match("Breaking  Bad  (2009)", "breaking.bad")
-    assert works_match("Show：名侦探柯南", "名侦探柯南 show")
+def test_parse_meta_year_bracket():
+    season, year = parse_meta("老友记 第十季 Friends  (2003)")
+    assert season == "10" and year == "2003"
 
-
-def test_match_noise_stays_apart():
-    # Leatherface rides along in Chainsaw-Man searches on Zimuku; it must not merge
-    assert not works_match("人皮脸 Leatherface", "电锯人")
-    assert not works_match("", "")
-
-
-def test_match_english_season_form():
-    assert works_match("Friends Season 2", "老友记 第二季 Friends") is False  # extra token
-    assert works_match("Friends Season 2", "Friends 第二季")
-
-
-# ---- aggregation ----
 
 def subhd_work(title, season="", year="", href="/d/1"):
     return Work(title=title, season=season, year=year, anchors={"subhd": [href]})
@@ -99,53 +64,6 @@ def subhd_work(title, season="", year="", href="/d/1"):
 
 def zimuku_work(title, season="", year="", url="https://zimuku.org/subs/1.html"):
     return Work(title=title, season=season, year=year, anchors={"zimuku": [url]})
-
-
-def test_aggregate_merges_unique_match():
-    rows = service.aggregate(
-        [subhd_work("绝命毒师 第二季 Breaking Bad", season="2")],
-        [zimuku_work("绝命毒师  第二季 Breaking Bad  (2009)", season="2", year="2009")])
-    assert len(rows) == 1
-    row = rows[0]
-    assert set(row.anchors) == {"subhd", "zimuku"}
-    assert row.year == "2009"  # adopted from the zimuku side
-
-
-def test_aggregate_zero_match_keeps_own_rows():
-    rows = service.aggregate(
-        [subhd_work("盗梦空间 Inception", href="/d/1")],
-        [zimuku_work("人皮脸 Leatherface", year="2017")])
-    assert len(rows) == 2
-    assert all(len(r.anchors) == 1 for r in rows)
-
-
-def test_aggregate_ambiguous_match_never_merges():
-    # two same-named SubHD works: linking the zimuku row to either would guess
-    rows = service.aggregate(
-        [subhd_work("盗梦空间 Inception", href="/d/1"),
-         subhd_work("Inception 盗梦空间", href="/d/2")],
-        [zimuku_work("盗梦空间 Inception", year="2010")])
-    assert len(rows) == 3
-    assert all(len(r.anchors) == 1 for r in rows)
-
-
-def test_aggregate_duplicate_pages_share_one_row():
-    # Zimuku may list the same work twice (with and without the year); both
-    # pages must stay reachable on a single merged row
-    rows = service.aggregate(
-        [subhd_work("复仇者联盟", href="/d/av")],
-        [zimuku_work("复仇者联盟 (2012)", year="2012", url="u1"),
-         zimuku_work("复仇者联盟", url="u2")])
-    assert len(rows) == 1
-    assert rows[0].anchors == {"subhd": ["/d/av"], "zimuku": ["u1", "u2"]}
-    assert rows[0].year == "2012"
-
-
-def test_aggregate_one_site_empty_still_lists():
-    rows = service.aggregate([subhd_work("绝命毒师 Breaking Bad", href="/d/1")], [])
-    assert len(rows) == 1 and "subhd" in rows[0].anchors
-    rows = service.aggregate([], [zimuku_work("绝命毒师 Breaking Bad")])
-    assert len(rows) == 1 and "zimuku" in rows[0].anchors
 
 
 def test_order_works_season_first_then_year():
@@ -172,7 +90,10 @@ class FakeProvider:
         self.log = log
 
     def find_works(self, query):
-        return [subhd_work("绝命毒师 Breaking Bad")]
+        return [zimuku_work("绝命毒师 Breaking Bad")]
+
+    def work_page(self, query, url):
+        return "1393859", []
 
     def search(self, query, work):
         return [Subtitle("a.srt", "http://a", Tags(lang=["chs"]))]
@@ -187,6 +108,9 @@ class RaisingProvider(FakeProvider):
     def find_works(self, query):
         raise RuntimeError("site down")
 
+    def work_page(self, query, url):
+        raise RuntimeError("site down")
+
     def search(self, query, work):
         raise RuntimeError("site down")
 
@@ -195,49 +119,103 @@ def patch_providers(monkeypatch, providers):
     monkeypatch.setattr(service, "PROVIDERS", providers)
 
 
-def test_resolve_work_isolated_when_one_site_fails(monkeypatch):
-    class SubhdSide(FakeProvider):
-        def find_works(self, query):
-            return [subhd_work("绝命毒师 Breaking Bad")]
-
-    class ZimukuSide(FakeProvider):
-        def find_works(self, query):
-            return [zimuku_work("绝命毒师 Breaking Bad")]
-
-    patch_providers(monkeypatch, {"subhd": SubhdSide, "zimuku": RaisingProvider})
+def test_resolve_work_bridges_subhd_by_douban_id(monkeypatch):
+    patch_providers(monkeypatch, {"zimuku": FakeProvider, "subhd": RaisingProvider})
     picked = service.resolve_work(WorkQuery(title="绝命毒师"), log=lambda msg: None)
-    assert picked is not None and "subhd" in picked.anchors
+    assert picked.anchors == {"zimuku": ["https://zimuku.org/subs/1.html"],
+                              "subhd": ["/d/1393859"]}
 
-    patch_providers(monkeypatch, {"subhd": RaisingProvider, "zimuku": ZimukuSide})
-    picked = service.resolve_work(WorkQuery(title="绝命毒师"), log=lambda msg: None)
-    assert picked is not None and "zimuku" in picked.anchors
+
+def test_resolve_work_survives_a_broken_bridge(monkeypatch):
+    class NoDouban(FakeProvider):
+        def work_page(self, query, url):
+            return "", []
+
+    class Gone(FakeProvider):
+        def work_page(self, query, url):
+            raise RuntimeError("page gone")
+
+    for side in (NoDouban, Gone):
+        patch_providers(monkeypatch, {"zimuku": side, "subhd": RaisingProvider})
+        picked = service.resolve_work(WorkQuery(title="x"), log=lambda msg: None)
+        assert "subhd" not in picked.anchors and "zimuku" in picked.anchors
+
+
+def test_resolve_work_preloads_zimuku_subtitles(monkeypatch):
+    sub = Subtitle("pre.srt", "http://pre", Tags(lang=["chs"]))
+
+    class Preload(FakeProvider):
+        def work_page(self, query, url):
+            return "1393859", [sub]
+
+        def search(self, query, work):
+            raise AssertionError("zimuku re-fetched despite the preload")
+
+    patch_providers(monkeypatch, {"zimuku": Preload, "subhd": FakeProvider})
+    work = service.resolve_work(WorkQuery(title="x"), log=lambda m: None)
+    subs = service.search_all(WorkQuery(title="x"), work, log=lambda m: None)
+    mine = [s for s in subs if s.tags.provider == "zimuku"]
+    assert mine == [sub]  # the preloaded object itself, no re-fetch
 
 
 def test_resolve_work_single_row_skips_picker(monkeypatch):
     calls = []
-    patch_providers(monkeypatch, {"subhd": FakeProvider, "zimuku": FakeProvider})
-    # both sites agree -> one merged row -> choose never invoked
+    patch_providers(monkeypatch, {"zimuku": FakeProvider, "subhd": FakeProvider})
     picked = service.resolve_work(WorkQuery(title="x"),
-                                  choose=lambda t, o: calls.append(o) or None)
+                                  choose=lambda t, o: calls.append(o) or None,
+                                  log=lambda msg: None)
     assert picked is not None and not calls
+
+
+def test_resolve_work_year_attempt_comes_first(monkeypatch):
+    class ByYear(FakeProvider):
+        seen = []
+
+        def find_works(self, query):
+            ByYear.seen.append(query.title)
+            return [zimuku_work("悲惨世界 Les Misérables (2012)", year="2012")] \
+                if query.title.endswith("2012") else []
+
+    patch_providers(monkeypatch, {"zimuku": ByYear, "subhd": FakeProvider})
+    picked = service.resolve_work(
+        WorkQuery(title="悲惨世界 Les Misérables", year="2012"), log=lambda msg: None)
+    assert ByYear.seen[0] == "悲惨世界 Les Misérables 2012"
+    assert picked.year == "2012"
+
+
+def test_resolve_work_season_filters_rows(monkeypatch):
+    class Seasons(FakeProvider):
+        def find_works(self, query):
+            return [zimuku_work("老友记 第一季 Friends", season="1", year="1994"),
+                    zimuku_work("老友记 第十季 Friends", season="10", year="2003"),
+                    zimuku_work("老友记 Friends 合集", season="")]
+
+    offered = []
+    patch_providers(monkeypatch, {"zimuku": Seasons, "subhd": FakeProvider})
+    picked = service.resolve_work(
+        WorkQuery(title="老友记 Friends", season="10", is_tv=True),
+        choose=lambda t, o: offered.append(o) or 0, log=lambda msg: None)
+    # other seasons dropped, the season-less pack kept; exact season first
+    assert len(offered[0]) == 2
+    assert picked.season == "10"
 
 
 def test_resolve_work_picker_paths(monkeypatch):
     class TwoWorks(FakeProvider):
         def find_works(self, query):
-            return [subhd_work("A", href="/d/1"), subhd_work("B", href="/d/2")]
+            return [zimuku_work("A", url="u1"), zimuku_work("B", url="u2")]
 
-    patch_providers(monkeypatch, {"subhd": TwoWorks, "zimuku": RaisingProvider})
+    patch_providers(monkeypatch, {"zimuku": TwoWorks, "subhd": FakeProvider})
     query = WorkQuery(title="x")
 
     # headless: first row wins
-    assert service.resolve_work(query).title == "A"
+    assert service.resolve_work(query, log=lambda m: None).title == "A"
     # picker selects the second row
-    picked = service.resolve_work(query, choose=lambda t, o: 1)
+    picked = service.resolve_work(query, choose=lambda t, o: 1, log=lambda m: None)
     assert picked.title == "B"
     # picker cancelled / out of range
-    assert service.resolve_work(query, choose=lambda t, o: None) is None
-    assert service.resolve_work(query, choose=lambda t, o: 99) is None
+    assert service.resolve_work(query, choose=lambda t, o: None, log=lambda m: None) is None
+    assert service.resolve_work(query, choose=lambda t, o: 99, log=lambda m: None) is None
 
 
 def test_resolve_work_nothing_found(monkeypatch):
@@ -245,16 +223,16 @@ def test_resolve_work_nothing_found(monkeypatch):
         def find_works(self, query):
             return []
 
-    patch_providers(monkeypatch, {"subhd": Empty, "zimuku": Empty})
-    assert service.resolve_work(WorkQuery(title="不存在")) is None
+    patch_providers(monkeypatch, {"zimuku": Empty})
+    assert service.resolve_work(WorkQuery(title="不存在"), log=lambda m: None) is None
 
 
 def test_resolve_work_alt_titles_ladder(monkeypatch):
     class PickyProvider(FakeProvider):
         def find_works(self, query):
-            return [subhd_work("Fallback Hit")] if query.title == "alt" else []
+            return [zimuku_work("Fallback Hit")] if query.title == "alt" else []
 
-    patch_providers(monkeypatch, {"subhd": PickyProvider, "zimuku": RaisingProvider})
+    patch_providers(monkeypatch, {"zimuku": PickyProvider, "subhd": FakeProvider})
     picked = service.resolve_work(
         WorkQuery(title="wrong", alt_titles=["nope", "alt"]),
         log=lambda msg: None)

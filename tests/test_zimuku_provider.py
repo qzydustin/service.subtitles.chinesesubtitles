@@ -27,6 +27,19 @@ def test_zimuku_find_works():
         print(f"{i}. {w.title} | season={w.season!r} year={w.year!r} | {w.anchors['zimuku'][0]}")
 
 
+def test_zimuku_work_page():
+    provider = ZimukuProvider(log=lambda msg: print(f"  [zimuku] {msg}"))
+
+    print("\n=== Zimuku work page: 老友记 第一季 (douban id + subtitles in one fetch) ===")
+    works = provider.find_works(WorkQuery(title="老友记 Friends"))
+    s1 = next(w for w in works if w.season == "1")
+    query = WorkQuery(title="老友记 Friends", season="1", is_tv=True)
+    douban, subs = provider.work_page(query, s1.anchors["zimuku"][0])
+    print(f"work: {s1.title} | douban id: {douban} | subtitles: {len(subs)}")
+    assert douban == "1393859", f"unexpected douban id: {douban}"
+    assert subs, "work page yielded no subtitles"
+
+
 def test_zimuku_search_and_download():
     log = lambda msg: print(f"  [zimuku] {msg}")
     provider = ZimukuProvider(log=log)

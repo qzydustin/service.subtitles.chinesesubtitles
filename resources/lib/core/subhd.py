@@ -7,8 +7,7 @@ from bs4 import BeautifulSoup
 
 from .archive import save_and_extract
 from .http import filename_from_headers, make_session, noop_log
-from .matcher import parse_meta
-from .models import FORMATS, DownloadResult, Subtitle, Tags, Work
+from .models import FORMATS, DownloadResult, Subtitle, Tags
 
 # Chinese origin badge -> normalized source tag
 SOURCE_MAP = {"转载精修": "reprint", "官方字幕": "official", "原创翻译": "original",
@@ -34,61 +33,10 @@ class SubhdProvider:
             self.log(f"subhd: GET {url} failed: {e}")
         return None
 
-    # ---- works ----
-
-    MAX_SEARCH_PAGES = 10
-
-    def find_works(self, query):
-        """Search the site for works matching the query title.
-
-        The first page is /search/{q} (the /1 suffix returns the same page);
-        following pages are /search/{q}/2 and up, capped at MAX_SEARCH_PAGES.
-        Result anchors are poster links whose text is empty; the title lives
-        in the poster img.alt. Parsing must be scoped to div.col-lg-9:
-        div.col-lg-3 is an unrelated "IMDb hot" sidebar ranking.
-
-        Measured: multi-word queries are token-AND matched and stopwords are
-        ignored ("The Lord of the Rings" ≡ "Lord of the Rings") — send titles
-        verbatim, no truncation or stopword stripping.
-
-        Pagination stops only on a failed/unparseable/empty result page —
-        a page of already-seen entries does not end it early.
-        """
-        if not query.title:
-            return []
-        q = urllib.parse.quote(query.title)
-        works, seen = [], set()
-        for page in range(self.MAX_SEARCH_PAGES):
-            url = (f"{self.BASE_URL}/search/{q}" if page == 0
-                   else f"{self.BASE_URL}/search/{q}/{page + 1}")
-            content = self._get(url)
-            if not content:
-                break
-            container = BeautifulSoup(content, "html.parser").select_one("div.col-lg-9")
-            if not container:
-                break
-            links = container.select('a[href^="/d/"]')
-            if not links:
-                break
-            for link in links:
-                href = link["href"]
-                if href in seen:
-                    continue
-                seen.add(href)
-                img = link.find("img")
-                title = (img.get("alt") or "").strip() if img else ""
-                if not title:
-                    self.log(f"subhd: poster without alt at {href}, skipped")
-                    continue
-                _, season, year = parse_meta(title)
-                works.append(Work(title=title, season=season, year=year,
-                                  anchors={"subhd": [href]}))
-        return works
-
     # ---- search ----
 
     def search(self, query, work):
-        """List subtitles for every /d/{id} page the work anchors."""
+        """List subtitles for every /d/{douban id} page the work anchors."""
         results = []
         episode = query.episode if query.is_tv else None
         for href in (work.anchors.get("subhd") or []) if work else []:

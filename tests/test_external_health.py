@@ -27,13 +27,15 @@ if LIB_DIR not in sys.path:
     sys.path.insert(0, LIB_DIR)
 
 from core.http import make_session
-from core.models import WorkQuery
+from core.models import Work, WorkQuery
 from core.service import resolve_work, search_all
 from core.subhd import SubhdProvider
 from core.zimuku import ZimukuProvider
 
 # Fixed sample (Inception, 2010); every check is independent of the others.
 WORK_QUERY = "盗梦空间"
+# Inception's Douban subject id: SubHD serves the work page under it directly
+DOUBAN_INCEPTION = "3541415"
 SUBHD_SID = "HbupDV"          # a long-lived subtitle entry
 
 CHECKS = []  # (name, func, full_only)
@@ -46,16 +48,6 @@ def check(name, full=False):
     return deco
 
 
-@check("subhd/find-works")
-def check_subhd_find_works():
-    provider = SubhdProvider()
-    works = provider.find_works(WorkQuery(title=WORK_QUERY))
-    assert works, "SubHD work search returned nothing (site redesign?)"
-    assert any("Inception" in w.title for w in works), \
-        f"No Inception work among: {[w.title for w in works[:5]]}"
-    return "%d works, e.g. %s" % (len(works), works[0].title)
-
-
 @check("zimuku/find-works")
 def check_zimuku_find_works():
     provider = ZimukuProvider()
@@ -64,15 +56,15 @@ def check_zimuku_find_works():
     return "%d works, e.g. %s" % (len(works), works[0].title)
 
 
-@check("subhd/search")
-def check_subhd_search():
+@check("subhd/direct-page")
+def check_subhd_direct_page():
+    """SubHD serves work pages under Douban subject ids (/d/{id})."""
     provider = SubhdProvider()
-    works = [w for w in provider.find_works(WorkQuery(title=WORK_QUERY))
-             if "Inception" in w.title]
-    assert works, "work search returned nothing"
-    results = provider.search(WorkQuery(title=WORK_QUERY), works[0])
-    assert results, "work page yielded no subtitles (site redesign?)"
-    return "%d subtitles (%s)" % (len(results), works[0].anchors["subhd"][0])
+    work = Work(title="盗梦空间 Inception",
+                anchors={"subhd": ["/d/%s" % DOUBAN_INCEPTION]})
+    results = provider.search(WorkQuery(title=WORK_QUERY), work)
+    assert results, "/d/{douban id} page yielded no subtitles (site redesign?)"
+    return "%d subtitles (/d/%s)" % (len(results), DOUBAN_INCEPTION)
 
 
 @check("subhd/download-api")
@@ -95,12 +87,13 @@ def check_subhd_download_api():
 
 @check("resolve+search", full=True)
 def check_resolve_and_search():
-    """End-to-end: both sites in parallel, aggregate, pick, search."""
+    """End-to-end: zimuku ladder, douban bridge to SubHD, both sites' search."""
     query = WorkQuery(title=WORK_QUERY, year="2010")
     work = resolve_work(query, log=lambda msg: None)
-    assert work, "aggregated resolution failed (both sites empty or failing)"
+    assert work, "resolution failed (zimuku empty or failing)"
+    assert "zimuku" in work.anchors, "no zimuku anchor on the picked work"
     results = search_all(query, work, log=lambda msg: None)
-    assert results, "aggregated search returned nothing"
+    assert results, "search returned nothing"
     providers = {s.tags.provider for s in results}
     return "work [%s] from %s, %d subtitles" % (
         "+".join(work.anchors), sorted(providers), len(results))

@@ -16,15 +16,17 @@ class WorkQuery:
 
 @dataclass
 class Work:
-    """A work (movie or TV season) found on one or both subtitle sites."""
+    """A work (movie or TV season) located on Zimuku and bridged to SubHD."""
     title: str = ""          # site-original title, e.g. "绝命毒师 第二季 Breaking Bad"
     season: str = ""         # parsed from the title; "" when it carries none
-    year: str = ""           # parsed from the title (Zimuku has it, SubHD doesn't)
+    year: str = ""           # parsed from the title's "(19|20)xx" bracket
     anchors: dict = field(default_factory=dict)
-    # site name -> list of that site's page URLs for this work, e.g.
-    # {"subhd": ["/d/3586996"], "zimuku": ["https://zimuku.org/subs/27187.html"]}
-    # the keys double as coverage badges; duplicate pages of the same work
-    # share one row
+    # site name -> that site's page URLs. Zimuku pages come from the work
+    # search; the subhd entry is attached after the user picks a row, built
+    # from the picked page's Douban id ("/d/1393859")
+    preloaded: dict = field(default_factory=dict)
+    # provider name -> [Subtitle] already parsed off the picked page during
+    # resolution; search_all consumes these instead of fetching again
 
 
 @dataclass
