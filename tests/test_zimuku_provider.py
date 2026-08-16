@@ -1,88 +1,54 @@
-
+# -*- coding: utf-8 -*-
+"""Live tests for the Zimuku provider: work discovery, TV search, download."""
 import os
 import sys
 import tempfile
-from unittest.mock import MagicMock
 
-# Add lib to path
 base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 lib_dir = os.path.join(base_dir, "resources", "lib")
 if lib_dir not in sys.path:
-    sys.path.append(lib_dir)
-from providers.zimuku import ZimukuAgent
-from providers.common import build_subtitle_label
+    sys.path.insert(0, lib_dir)
 
-class RealLogger:
-    def log(self, module, msg, level=0):
-        print(f"[{module}] {msg}")
-
-def _build_agent(dl_loc):
-    logger = RealLogger()
-    unpacker = MagicMock()
-    unpacker.unpack.return_value = ("", [])
-    
-    agent = ZimukuAgent("https://zimuku.org", dl_loc, logger, unpacker)
-    return agent, logger
+from core.models import WorkQuery, build_label
+from core.zimuku import ZimukuProvider
 
 
-def test_zimuku_candidate_search():
-    with tempfile.TemporaryDirectory() as dl_loc:
-        agent, _logger = _build_agent(dl_loc)
-        candidates = agent.search_candidates("电锯人", "2022", is_tv=True)
-        assert isinstance(candidates, list)
-        assert candidates, "Zimuku candidate search returned no results."
-        first = candidates[0]
-        print("\n=== Zimuku candidate search ===")
-        print("Total candidates:", len(candidates))
-        for i, res in enumerate(candidates[:5], start=1):
-            print(
-                f"{i}. title={res.get('title')} | year={res.get('year')} | "
-                f"type={res.get('type')} | url={res.get('zimuku_subs_url')}"
-            )
-        assert first.get("zimuku_subs_url"), "Candidate missing zimuku_subs_url."
+def test_zimuku_find_works():
+    provider = ZimukuProvider(log=lambda msg: print(f"  [zimuku] {msg}"))
+
+    print("\n=== Zimuku find_works: 绝命毒师 (pagination must reach all seasons) ===")
+    works = provider.find_works(WorkQuery(title="绝命毒师"))
+    assert works, "Zimuku work search returned no results."
+    seasons = {w.season for w in works if w.season}
+    assert {"1", "2", "3", "4", "5"} <= seasons, \
+        f"Missing seasons, got {sorted(seasons)} among {len(works)} works"
+    print(f"Total works: {len(works)}, seasons found: {sorted(seasons)}")
+    for i, w in enumerate(works[:5], start=1):
+        print(f"{i}. {w.title} | season={w.season!r} year={w.year!r} | {w.anchors['zimuku'][0]}")
 
 
 def test_zimuku_search_and_download():
-    with tempfile.TemporaryDirectory() as dl_loc:
-        agent, logger = _build_agent(dl_loc)
+    log = lambda msg: print(f"  [zimuku] {msg}")
+    provider = ZimukuProvider(log=log)
 
-        print("\n=== Testing Zimuku Search for 电锯人 S01E02 ===")
-        items = {
-            'tvshow': '电锯人',
-            'season': '1',
-            'episode': '2',
-            'year': '2022'
-        }
+    print("\n=== Zimuku search: 电锯人 S01E02 ===")
+    query = WorkQuery(title="电锯人", season="1", episode="2", is_tv=True, year="2022")
+    found = provider.find_works(query)
+    # single-season shows are often listed without an explicit season marker
+    works = [w for w in found if w.season == "1"] or \
+            [w for w in found if "电锯人" in w.title]
+    assert works, "No matching work found."
+    print(f"Work: {works[0].title} | anchor={works[0].anchors['zimuku']}")
 
-        candidates = agent.search_candidates("电锯人", "2022", is_tv=True)
-        assert candidates, "Zimuku candidate search returned no results."
-        selected = candidates[0]
-        if not selected.get("id"):
-            selected["id"] = agent.get_douban_id_from_subs(selected.get("zimuku_subs_url"))
-        if not selected.get("type"):
-            selected["type"] = "tv"
+    results = provider.search(query, works[0])
+    assert results, "Zimuku search returned no subtitles."
+    print(f"Total subtitles found: {len(results)}")
+    for i, s in enumerate(results[:5]):
+        print(f"[{i:2}] {build_label(s.tags, filename=s.filename)}")
 
-        results = agent.search(items, candidate=selected)
-        assert isinstance(results, list)
-        assert results, "Zimuku search returned no subtitles."
-
-        print(f"\nTotal subtitles found: {len(results)}")
-        print("-" * 50)
-
-        for i, s in enumerate(results[:5]):
-            tags = s.get('tags', {})
-            final_label = build_subtitle_label(tags, provider="ZIMUKU", filename=s.get('filename'))
-
-            print(f"[{i:2}] {final_label}")
-        print("-" * 50)
-        print("\n=== Downloading first subtitle ===")
-        first = results[0]
-        names, short_names, paths = agent.download(first["link"])
-        print(f"Downloaded: {names}")
-        print(f"Short names: {short_names}")
-        print(f"Paths: {paths}")
-
-
-if __name__ == "__main__":
-    test_zimuku_candidate_search()
-    test_zimuku_search_and_download()
+    print("\n=== Downloading first subtitle ===")
+    with tempfile.TemporaryDirectory() as dest:
+        result = provider.download(results[0].link, dest)
+        print(f"status={result.status} files={result.files}")
+        assert result.status == "ok" and result.files, "Zimuku download failed."
+        assert all(os.path.exists(p) for p in result.paths)

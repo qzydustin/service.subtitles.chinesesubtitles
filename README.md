@@ -28,13 +28,15 @@ Kodi 21+ 中文字幕插件，支持从 SubHD 和 Zimuku 搜索下载字幕，�
 
 ## 开发与排查
 
+代码分两层：`resources/lib/core` 是纯 Python 字幕库（豆瓣/字幕站抓取、下载解压、过滤排序，不依赖 Kodi，可独立使用与测试）；`resources/lib/kodi` 是 Kodi 适配层（对话框、列表、设置、rar/7z 解压等 xbmc 交互）。
+
 本插件依赖豆瓣、SubHD、Zimuku 三个外部服务，站点改版或防爬策略变化都会影响可用性。
 反馈「字幕源有问题」时，可先运行健康检查定位是哪个环节：
 
     python3 tests/test_external_health.py          # 轻量：搜索链路 + SubHD 下载 API
     python3 tests/test_external_health.py --full   # 完整：真实下载并解压字幕
 
-也可运行完整测试套件（联网）：`pytest tests/`。
+也可运行完整测试套件（联网）：`pytest tests/`。豆瓣搜索频繁调用会被限流（「搜索访问太频繁」），稍等几分钟即可恢复。
 
 ## 许可
 
