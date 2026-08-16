@@ -1,17 +1,15 @@
 import urllib.parse
-from .common import DEFAULT_UA, DEFAULT_HEADERS
+from .common import make_session
 
 class BaseAgent:
     """字幕提供商 Agent 基类"""
 
     def __init__(self, base_url, default_url, dl_location, logger, unpacker):
-        import requests
         self.BASE_URL = (base_url or default_url).rstrip("/")
         self.DOWNLOAD_LOCATION = dl_location
         self.logger = logger
         self.unpacker = unpacker
-        self.session = requests.Session()
-        self.session.headers.update({'User-Agent': DEFAULT_UA, **DEFAULT_HEADERS})
+        self.session = make_session()
 
     def log(self, msg, level=0):
         self.logger.log(self.__class__.__name__, msg, level)

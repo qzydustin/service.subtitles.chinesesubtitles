@@ -1,4 +1,5 @@
 import re
+import html
 import urllib.parse
 from bs4 import BeautifulSoup
 from .captcha import ZimukuSolver
@@ -10,8 +11,6 @@ class ZimukuAgent(BaseAgent):
 
     def __init__(self, base_url, dl_location, logger, unpacker):
         super().__init__(base_url, "https://zimuku.org", dl_location, logger, unpacker)
-        import requests
-        self.session.mount('https://', requests.adapters.HTTPAdapter(max_retries=3))
 
     MAX_CAPTCHA_RETRIES = 3
 
@@ -211,6 +210,8 @@ class ZimukuAgent(BaseAgent):
             except Exception as e:
                 self.log(f"Failed to download from {file_url}: {e}", 2)
         if not filename or not file_data or len(file_data) <= self.FILE_MIN_SIZE: return [], [], []
+        # 服务器返回的文件名可能带二次转义的 HTML 实体（如 chs&amp;eng.ass）
+        filename = html.unescape(filename)
         dot = filename.rfind(".")
         if dot != -1: filename = filename[:dot] + filename[dot:].lower()
         if filename.endswith(SUBTITLE_EXTS) or filename.endswith(ARCHIVE_EXTS):

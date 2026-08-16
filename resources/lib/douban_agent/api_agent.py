@@ -2,11 +2,10 @@
 API-based Douban agent using search.douban.com/movie/subject_search
 """
 from .base import AbstractDoubanAgent
+from providers.common import make_session
 import re
 import json
-import urllib.request
 import urllib.parse
-import ssl
 
 
 class ApiAgent(AbstractDoubanAgent):
@@ -18,12 +17,8 @@ class ApiAgent(AbstractDoubanAgent):
     def __init__(self):
         super().__init__()
         self.base_url = "https://search.douban.com/movie/subject_search"
-        self.headers = {
-            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-            'Referer': 'https://movie.douban.com/'
-        }
-        self.ssl_context = ssl._create_unverified_context()
+        self.session = make_session()
+        self.session.headers.update({'Referer': 'https://movie.douban.com/'})
 
     def search(self, title, year=None, season=None):
         """Search Douban and return a list of candidates."""
@@ -56,18 +51,17 @@ class ApiAgent(AbstractDoubanAgent):
             full_url = f"{self.base_url}?{urllib.parse.urlencode(params)}"
 
             try:
-                req = urllib.request.Request(full_url, headers=self.headers)
-                with urllib.request.urlopen(req, context=self.ssl_context, timeout=10) as response:
-                    if response.status != 200:
-                        break
+                resp = self.session.get(full_url, timeout=10)
+                if resp.status_code != 200:
+                    break
 
-                    items = self._parse_html(response.read().decode('utf-8'), full_url)
-                    if not items:
-                        break
+                items = self._parse_html(resp.text, full_url)
+                if not items:
+                    break
 
-                    all_results.extend(items)
-                    if len(items) < page_size:
-                        break
+                all_results.extend(items)
+                if len(items) < page_size:
+                    break
             except Exception:
                 break
 

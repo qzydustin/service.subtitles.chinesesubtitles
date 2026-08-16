@@ -3,6 +3,8 @@ import re
 import html
 import urllib.parse
 
+from constants import DEFAULT_UA, DEFAULT_HEADERS, SUBTITLE_EXTS, ARCHIVE_EXTS  # noqa: F401  re-export
+
 SRC_MAP = {
     'official': "[官方]",
     'reprint': "[精修]",
@@ -20,17 +22,17 @@ FMT_MAP = {
     'vtt': "[VTT]",
 }
 
-SUBTITLE_EXTS = (".srt", ".sub", ".smi", ".ssa", ".ass", ".sup")
-ARCHIVE_EXTS = (".zip", ".7z", ".tar", ".bz2", ".rar", ".gz", ".xz", ".iso", ".tgz", ".tbz2", ".cbr")
 
-DEFAULT_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-DEFAULT_HEADERS = {
-    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-    'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
-    'Cache-Control': 'no-cache',
-    'Pragma': 'no-cache',
-    'Upgrade-Insecure-Requests': '1'
-}
+def make_session(retries=3):
+    """创建带统一浏览器头与重试策略的 HTTP 会话。"""
+    import requests
+    session = requests.Session()
+    session.headers.update({'User-Agent': DEFAULT_UA, **DEFAULT_HEADERS})
+    if retries:
+        adapter = requests.adapters.HTTPAdapter(max_retries=retries)
+        session.mount('https://', adapter)
+        session.mount('http://', adapter)
+    return session
 
 def get_filename_from_cd(cd, url=None, default=None):
     if cd:
@@ -103,11 +105,14 @@ def save_and_unpack(download_location, unpacker, filename, data):
     target_path, files = unpacker.unpack(filepath)
     if not files:
         if not filepath.lower().endswith(SUBTITLE_EXTS):
-            import xbmcaddon, xbmcgui
-            addon = xbmcaddon.Addon()
-            icon = os.path.join(addon.getAddonInfo('path'), 'resources', 'icon.png')
-            xbmcgui.Dialog().notification(
-                addon.getAddonInfo('name'), addon.getLocalizedString(30902), icon, 4000)
+            try:
+                import xbmcaddon, xbmcgui
+                addon = xbmcaddon.Addon()
+                icon = os.path.join(addon.getAddonInfo('path'), 'resources', 'icon.png')
+                xbmcgui.Dialog().notification(
+                    addon.getAddonInfo('name'), addon.getLocalizedString(30902), icon, 4000)
+            except Exception:
+                pass  # 无 Kodi 环境（测试/headless）时跳过通知
             return [], [], []
         return [filename], [filename], [filepath]
     full_paths = [os.path.join(target_path, f) for f in files]

@@ -1,1 +1,0 @@
-from services.candidate_service import get_candidate

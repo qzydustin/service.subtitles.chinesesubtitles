@@ -3,8 +3,7 @@ import os
 import urllib.parse
 import xbmcvfs
 
-
-SUBTITLE_EXTS = (".srt", ".sub", ".ssa", ".ass", ".sup", ".vtt")
+from constants import SUBTITLE_EXTS
 
 
 class _NullLogger:

@@ -53,7 +53,8 @@ def _select_candidate(candidates):
         if sel == -1 or sel >= len(candidates):
             return None
         return candidates[sel]
-    except (ImportError, Exception):
+    except Exception:
+        # 无 Kodi UI（测试/headless）时默认选第一个
         return candidates[0]
 
 
@@ -75,12 +76,15 @@ def get_candidate(title, items, logger=None):
         if logger:
             logger.log("CandidateService", "Zimuku search failed: %s" % e, 2)
 
-    # 后处理：按类型与年份排序（按来源分别处理）
+    # 后处理：豆瓣候选在前、Zimuku 备用在后；各组内按类型与年份接近度排序
+    # （Python 排序稳定，同 key 保持原有顺序）
     target_type = "tv" if is_tv else "movie"
     try:
         target_year = int(db_year) if db_year else None
     except Exception:
         target_year = None
+
+    src_rank = {"douban": 0, "zimuku": 1}
 
     def type_key(res):
         return 0 if res.get("type") == target_type else 1
@@ -93,22 +97,11 @@ def get_candidate(title, items, logger=None):
         except Exception:
             return 9999
 
-    grouped, order = {}, []
-    for res in candidates:
-        src = res.get("source") or "douban"
-        if src not in grouped:
-            grouped[src] = []
-            order.append(src)
-        grouped[src].append(res)
-
-    candidates = []
-    src_order = ["douban", "zimuku"]
-    ordered_sources = [s for s in src_order if s in grouped]
-    for s in order:
-        if s not in src_order:
-            ordered_sources.append(s)
-    for src in ordered_sources:
-        candidates.extend(sorted(grouped[src], key=lambda r: (type_key(r), year_key(r))))
+    candidates.sort(key=lambda r: (
+        src_rank.get(r.get("source") or "douban", 2),
+        type_key(r),
+        year_key(r),
+    ))
 
     if not candidates:
         try:

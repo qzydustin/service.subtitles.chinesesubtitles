@@ -39,7 +39,7 @@ def download_subtitles(url, provider, agents, addon, temp_dir, logger):
 
     logger.log("Download", "Download page: %s" % url, level=1)
 
-    dl_agent = agents.get(provider or "subhd", agents.get("subhd"))
+    dl_agent = agents.get(provider) or agents.get("subhd")
     sub_name_list, short_sub_name_list, sub_file_list = dl_agent.download(url)
     logger.log("Download", "Files: %s" % sub_name_list, level=1)
 
