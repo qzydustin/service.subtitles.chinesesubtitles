@@ -108,23 +108,54 @@ class SubHDAgent(BaseAgent):
         for r in results: r['tags']['production'] = prod
         return results
 
+    def _resolve_down_url(self, page_url, soup):
+        """解析临时下载页地址。
+
+        2026-08 改版后详情页不再有 /down/ 直链，而是按钮(button.down[data-sid])，
+        需先 POST /api/sub/prepare-download 换取一次性临时页 /down/{sid}
+        （直连 /down/{sid} 返回 403）。旧版 <a class="down"> 直链保留为兜底。
+        """
+        sid = None
+        btn = soup.find('button', class_='down')
+        if btn:
+            sid = btn.get('data-sid') or btn.get('sid')
+        if not sid:
+            m = re.search(r'/a/([^/?#]+)', page_url)
+            sid = m.group(1) if m else None
+        if sid:
+            try:
+                res = self.session.post(
+                    self.BASE_URL + "/api/sub/prepare-download",
+                    json={"sid": sid},
+                    headers={'Referer': page_url, 'X-Requested-With': 'XMLHttpRequest'},
+                    timeout=10)
+                if res.status_code == 200:
+                    data = res.json()
+                    if data.get('success') and data.get('url'):
+                        temp = data['url']
+                        return temp if temp.startswith('http') else self.BASE_URL + temp
+                    self.log(f"prepare-download failed: {data.get('msg')}", 2)
+                else:
+                    self.log(f"prepare-download status {res.status_code}", 2)
+            except Exception as e:
+                self.log(f"prepare-download exception: {e}", 2)
+        for a in soup.find_all('a', class_='down'):
+            href = a.get('href', '')
+            if '/down/' in href:
+                return href if href.startswith('http') else self.BASE_URL + href
+        return None
+
     def download(self, url):
         """下载字幕"""
         content = self.get_page(url)
         if not content: return [], [], []
         soup = BeautifulSoup(content, 'html.parser')
-        down_btn = soup.find('a', class_='down')
-        if not down_btn:
-            for a in soup.find_all('a', href=True):
-                if '/down/' in a['href']:
-                    down_btn = a
-                    break
-        if not down_btn: return [], [], []
-        down_url = down_btn['href']
-        if not down_url.startswith('http'): down_url = self.BASE_URL + down_url
-        dl_content = self.get_page(down_url, referer=url)
-        if not dl_content: return [], [], []
-        sid = down_url.split('/')[-1]
+        down_url = self._resolve_down_url(url, soup)
+        if not down_url:
+            self.log("No download entry found on page", 2)
+            return [], [], []
+        if not self.get_page(down_url, referer=url): return [], [], []
+        sid = down_url.split('/')[-1].split('?')[0].split('#')[0]
         api_url = self.BASE_URL + "/api/sub/down"
         try:
             payload = {"sid": sid, "cap": ""}
@@ -134,12 +165,13 @@ class SubHDAgent(BaseAgent):
             if data.get('pass') == False:
                 svg = data.get('msg')
                 if svg:
+                    # IP 风控/限额时后端仍会返回 SVG 验证码(pass=false, msg=svg)。
+                    # 干净 IP 难以复现，此处保持与旧版一致的求解重试逻辑
                     from .captcha import SubHDSolver
                     code = SubHDSolver().solve(svg)
                     payload["cap"] = code
                     res = self.session.post(api_url, json=payload, headers={'Referer': down_url}, timeout=10)
                     data = res.json()
-                    if not data.get('success'): return [], [], []
             if not data.get('success'): return [], [], []
             file_url = data.get('url')
             if not file_url: return [], [], []
