@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 """Kodi plugin layer: adapts the xbmc runtime to the pure core library."""
+import json
 import os
+import re
 import sys
 import urllib.parse
 
@@ -17,7 +19,7 @@ if _LIB_DIR not in sys.path:
 from core import service
 from core.archive import SUBTITLE_EXTS, shorten_names
 from core.filter import apply_filters
-from core.matcher import parse_filename
+from core.matcher import CN_NUM, parse_filename
 from core.models import WorkQuery, build_label, language_meta
 
 __addon__ = xbmcaddon.Addon()
@@ -96,6 +98,69 @@ def filter_settings():
 
 # ---- actions ----
 
+# trailing season marker in folder names: "电锯人 第一季", "Show Season 2", "Show S02"
+FOLDER_SEASON_RE = re.compile(
+    r'(?:第([一二三四五六七八九十\d]+)\s*季|season\s*(\d+)|S(\d{1,2}))\s*$', re.I)
+GENERIC_FOLDERS = {"movie", "movies", "tv", "tvshows", "shows", "series",
+                   "video", "videos", "media", "download", "downloads", "新建文件夹"}
+
+
+def _hashlike(title):
+    """Release-name residue like 'bd26e8f2b1ee': no spaces, digits and letters mixed."""
+    return (len(title) >= 8 and " " not in title
+            and any(c.isdigit() for c in title) and any(c.isalpha() for c in title))
+
+
+def release_query(stem, folder):
+    """WorkQuery for unscraped items: parse the release name; the parent
+    folder (one show per folder, season marker stripped) rescues hash-like
+    or empty filenames."""
+    parsed = parse_filename(stem)
+    title = parsed["title"]
+    if not title or _hashlike(title):
+        folder = folder.strip()
+        season = ""
+        m = FOLDER_SEASON_RE.search(folder)
+        if m:
+            raw = m.group(1) or m.group(2) or m.group(3)
+            num = int(raw) if raw.isdigit() else CN_NUM.get(raw, 0)
+            season = str(num) if num else ""
+            folder = folder[:m.start()].strip(" .-_")
+        folder_parsed = parse_filename(folder)
+        if folder_parsed["title"] and folder_parsed["title"].lower() not in GENERIC_FOLDERS:
+            return WorkQuery(
+                title=folder_parsed["title"],
+                year=parsed["year"] or folder_parsed["year"],
+                season=parsed["season"] or folder_parsed["season"] or season,
+                episode=parsed["episode"],
+                is_tv=bool(parsed["season"] or parsed["episode"]
+                           or folder_parsed["season"] or season))
+    return WorkQuery(title=title, year=parsed["year"],
+                     season=parsed["season"], episode=parsed["episode"],
+                     is_tv=bool(parsed["season"] or parsed["episode"]))
+
+
+def show_original_title():
+    """The playing show's original title from the Kodi library.
+
+    The episode tag exposes no original show title (only getTVShowTitle),
+    so ask the video library via JSON-RPC; '' when unavailable."""
+    try:
+        dbid = xbmc.getInfoLabel("VideoPlayer.TvShowDBID")
+        if not dbid or not dbid.isdigit():
+            return ""
+        reply = json.loads(xbmc.executeJSONRPC(json.dumps({
+            "jsonrpc": "2.0", "id": 1,
+            "method": "VideoLibrary.GetTVShowDetails",
+            "params": {"tvshowid": int(dbid), "properties": ["originaltitle"]},
+        })))
+        details = reply.get("result", {}).get("tvshowdetails", {})
+        return details.get("originaltitle", "").strip()
+    except Exception as e:
+        log(f"library lookup for show original title failed: {e}", xbmc.LOGWARNING)
+        return ""
+
+
 def current_query():
     """Build a WorkQuery from the playing video's info tag.
 
@@ -106,27 +171,45 @@ def current_query():
     player = xbmc.Player()
     try:
         tag = player.getVideoInfoTag()
-        filename = os.path.basename(player.getPlayingFile())
+        path = player.getPlayingFile()
     except Exception as e:
         log(f"no playing video metadata: {e}", xbmc.LOGWARNING)
         return None
+    filename = os.path.basename(path)
+    stem = os.path.splitext(filename)[0]
     tvshow = tag.getTVShowTitle().strip()
-    title = (tvshow or tag.getTitle().strip() or tag.getOriginalTitle().strip())
+    display = (tvshow or tag.getTitle()).strip()
+    original = tag.getOriginalTitle().strip()
     year = str(tag.getYear()) if tag.getYear() else ""
-    if not title:
-        # unscraped media: squeeze a title out of the release name
-        parsed = parse_filename(filename)
-        log(f"no scraped title; filename parse: {parsed}")
-        return WorkQuery(title=parsed["title"], year=parsed["year"],
-                         season=parsed["season"], episode=parsed["episode"],
-                         is_tv=bool(parsed["season"] or parsed["episode"]))
+    # unscraped: no titles at all, or Kodi echoed the release name back as the
+    # title (its label for non-library items) — a dotted release name queried
+    # verbatim finds nothing under token-AND matching
+    if not original and (not display or display == stem):
+        query = release_query(stem, os.path.basename(os.path.dirname(path)))
+        log(f"unscraped item; release-name parse: {query}")
+        return query
     if tvshow:
         season, episode = tag.getSeason(), tag.getEpisode()
-        return WorkQuery(title=tvshow, year=year,
-                         season=str(season) if season > 0 else "",
-                         episode=str(episode) if episode > 0 else "",
-                         is_tv=True)
-    return WorkQuery(title=title, year=year)
+        fields = dict(year=year,
+                      season=str(season) if season > 0 else "",
+                      episode=str(episode) if episode > 0 else "",
+                      is_tv=True)
+        original = show_original_title()
+        if original and original != tvshow:
+            # same bilingual precision win as movies: "老友记 Friends" returns
+            # only Friends-related rows, "老友记" drags 7 noise rows along
+            return WorkQuery(title=f"{tvshow} {original}",
+                             alt_titles=[tvshow, original], **fields)
+        return WorkQuery(title=tvshow, **fields)
+    # movies: sites list bilingual titles and match queries by token-AND
+    # (substring level), so "中文 英文" hits exactly and rescues single
+    # common-word titles ("小丑回魂 It" -> the right 4 works, "It" -> 123
+    # junk rows); single-language titles follow as zero-result fallbacks
+    # in the order Chinese (usually douban-aligned) then original
+    if display and original and display != original:
+        return WorkQuery(title=f"{display} {original}",
+                         alt_titles=[display, original], year=year)
+    return WorkQuery(title=original or display, year=year)
 
 
 def do_search(query):

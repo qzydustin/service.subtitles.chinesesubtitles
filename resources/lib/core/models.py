@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 class WorkQuery:
     """What the played file is: title plus optional season/episode/year."""
     title: str = ""      # search title (Kodi tvshow/title, manual input, filename parse)
+    alt_titles: list = field(default_factory=list)  # fallbacks when title finds no works
     year: str = ""
     season: str = ""     # episodes only
     episode: str = ""

@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """Use-case orchestration: work resolution, two-site search, download."""
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
 
 from .http import noop_log
 from .matcher import works_match
@@ -61,13 +62,8 @@ def order_works(rows, query=None):
     return rows
 
 
-def resolve_work(query, choose=None, log=noop_log):
-    """Resolve the query to a single work via both sites, in parallel.
-
-    Returns None when nothing is found or the picker is cancelled. A single
-    row is returned without showing the picker; `choose(title, options)`
-    otherwise decides (headless default: first row).
-    """
+def _find_rows(query, log):
+    """Search both sites in parallel and aggregate the work rows."""
 
     def fetch(name):
         try:
@@ -79,7 +75,26 @@ def resolve_work(query, choose=None, log=noop_log):
     with ThreadPoolExecutor(max_workers=2) as pool:
         subhd_future = pool.submit(fetch, "subhd")
         zimuku_future = pool.submit(fetch, "zimuku")
-        rows = aggregate(subhd_future.result(), zimuku_future.result(), query)
+        return aggregate(subhd_future.result(), zimuku_future.result(), query)
+
+
+def resolve_work(query, choose=None, log=noop_log):
+    """Resolve the query to a single work via both sites, in parallel.
+
+    When the primary title finds no works, the alt_titles are tried in order
+    (e.g. bilingual combined -> original -> display title). Returns None when
+    nothing is found or the picker is cancelled. A single row is returned
+    without showing the picker; `choose(title, options)` otherwise decides
+    (headless default: first row).
+    """
+    rows = []
+    for i, title in enumerate([query.title] + list(query.alt_titles)):
+        if i:
+            log(f"no works for '{query.title}', retrying with '{title}'")
+            query = replace(query, title=title, alt_titles=[])
+        rows = _find_rows(query, log)
+        if rows:
+            break
     if not rows:
         return None
     if len(rows) == 1:

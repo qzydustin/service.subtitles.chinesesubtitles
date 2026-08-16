@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 """Offline tests for the Kodi adapter's query building (needs Kodistubs)."""
+import json
 import os
 import sys
 
@@ -41,8 +42,8 @@ class FakeTag:
 
 
 class FakePlayer:
-    def __init__(self, tag=None, filename=""):
-        self.tag, self.filename = tag, filename
+    def __init__(self, tag=None, filename="", path=None):
+        self.tag, self.path = tag, path or ("/tv/" + filename)
 
     def getVideoInfoTag(self):
         if self.tag is None:
@@ -50,7 +51,7 @@ class FakePlayer:
         return self.tag
 
     def getPlayingFile(self):
-        return "/tv/" + self.filename
+        return self.path
 
 
 def with_player(monkeypatch, player):
@@ -59,30 +60,83 @@ def with_player(monkeypatch, player):
 
 def test_query_tv_episode(monkeypatch):
     tag = FakeTag(title="Breakage", tvshow="绝命毒师", season=2, episode=5, year=2009)
+    monkeypatch.setattr(plugin, "show_original_title", lambda: "")
     with_player(monkeypatch, FakePlayer(tag, "breaking.bad.s02e05.mkv"))
     query = plugin.current_query()
     assert query == plugin.WorkQuery(title="绝命毒师", year="2009", season="2",
                                      episode="5", is_tv=True)
 
 
-def test_query_movie_prefers_display_title(monkeypatch):
+def test_query_tv_combines_show_original_title(monkeypatch):
+    tag = FakeTag(title="Breakage", tvshow="绝命毒师", season=2, episode=5, year=2009)
+    monkeypatch.setattr(plugin, "show_original_title", lambda: "Breaking Bad")
+    with_player(monkeypatch, FakePlayer(tag, "breaking.bad.s02e05.mkv"))
+    query = plugin.current_query()
+    assert query == plugin.WorkQuery(title="绝命毒师 Breaking Bad",
+                                     alt_titles=["绝命毒师", "Breaking Bad"],
+                                     year="2009", season="2", episode="5",
+                                     is_tv=True)
+
+
+def test_show_original_title_lookup(monkeypatch):
+    reply = json.dumps({"result": {"tvshowdetails": {"originaltitle": "Friends"}}})
+    monkeypatch.setattr(xbmc, "getInfoLabel", lambda label: "42" if label == "VideoPlayer.TvShowDBID" else "")
+    monkeypatch.setattr(xbmc, "executeJSONRPC", lambda req: reply)
+    assert plugin.show_original_title() == "Friends"
+
+
+def test_show_original_title_unavailable(monkeypatch):
+    monkeypatch.setattr(xbmc, "getInfoLabel", lambda label: "")
+    assert plugin.show_original_title() == ""
+    monkeypatch.setattr(xbmc, "getInfoLabel", lambda label: "42")
+    monkeypatch.setattr(xbmc, "executeJSONRPC", lambda req: "not json")
+    assert plugin.show_original_title() == ""
+
+
+def test_query_movie_combines_bilingual_titles(monkeypatch):
     tag = FakeTag(title="盗梦空间", original="Inception", year=2010)
     with_player(monkeypatch, FakePlayer(tag, "inception.mkv"))
     query = plugin.current_query()
-    assert query == plugin.WorkQuery(title="盗梦空间", year="2010", is_tv=False)
+    assert query == plugin.WorkQuery(title="盗梦空间 Inception",
+                                     alt_titles=["盗梦空间", "Inception"],
+                                     year="2010", is_tv=False)
 
 
-def test_query_movie_falls_back_to_original_title(monkeypatch):
-    tag = FakeTag(original="Inception", year=2010)
+def test_query_movie_without_original(monkeypatch):
+    tag = FakeTag(title="盗梦空间", year=2010)
     with_player(monkeypatch, FakePlayer(tag, "x.mkv"))
     query = plugin.current_query()
-    assert query.title == "Inception" and query.year == "2010"
+    assert query == plugin.WorkQuery(title="盗梦空间", year="2010", is_tv=False)
 
 
 def test_query_unscraped_filename_fallback(monkeypatch):
     with_player(monkeypatch, FakePlayer(FakeTag(), "Show.Name.S02E05.720p.x264-GRP.mkv"))
     query = plugin.current_query()
     assert query == plugin.WorkQuery(title="Show Name", season="2", episode="5", is_tv=True)
+
+
+def test_query_kodi_title_echo_parses_release_name(monkeypatch):
+    # non-library playback: Kodi labels the item with the filename stem
+    name = "Show.Name.S02E05.720p.x264-GRP"
+    tag = FakeTag(title=name)
+    with_player(monkeypatch, FakePlayer(tag, name + ".mkv"))
+    query = plugin.current_query()
+    assert query == plugin.WorkQuery(title="Show Name", season="2", episode="5", is_tv=True)
+
+
+def test_query_hash_filename_rescued_by_folder(monkeypatch):
+    path = "/media/TV/电锯人 第一季/bd26e8f2b1ee9c.mkv"
+    with_player(monkeypatch, FakePlayer(FakeTag(), path=path))
+    query = plugin.current_query()
+    assert query == plugin.WorkQuery(title="电锯人", season="1", is_tv=True)
+
+
+def test_query_hash_filename_generic_folder_not_used(monkeypatch):
+    path = "/Downloads/bd26e8f2b1ee9c.mkv"
+    with_player(monkeypatch, FakePlayer(FakeTag(), path=path))
+    query = plugin.current_query()
+    # no better source than the hash itself; the search will simply miss
+    assert query.title == "bd26e8f2b1ee9c"
 
 
 def test_query_specials_drop_season_zero(monkeypatch):

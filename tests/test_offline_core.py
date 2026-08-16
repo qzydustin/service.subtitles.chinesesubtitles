@@ -237,6 +237,18 @@ def test_resolve_work_nothing_found(monkeypatch):
     assert service.resolve_work(WorkQuery(title="不存在")) is None
 
 
+def test_resolve_work_alt_titles_ladder(monkeypatch):
+    class PickyProvider(FakeProvider):
+        def find_works(self, query):
+            return [subhd_work("Fallback Hit")] if query.title == "alt" else []
+
+    patch_providers(monkeypatch, {"subhd": PickyProvider, "zimuku": RaisingProvider})
+    picked = service.resolve_work(
+        WorkQuery(title="wrong", alt_titles=["nope", "alt"]),
+        log=lambda msg: None)
+    assert picked is not None and picked.title == "Fallback Hit"
+
+
 def test_search_all_anchors_and_isolation(monkeypatch):
     query = WorkQuery(title="绝命毒师", season="2", episode="5", is_tv=True)
 

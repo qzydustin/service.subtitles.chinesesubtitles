@@ -121,6 +121,10 @@ class SubhdProvider:
         in the poster img.alt. Parsing must be scoped to div.col-lg-9:
         div.col-lg-3 is an unrelated "IMDb hot" sidebar ranking.
 
+        Measured: multi-word queries are token-AND matched and stopwords are
+        ignored ("The Lord of the Rings" ≡ "Lord of the Rings") — send titles
+        verbatim, no truncation or stopword stripping.
+
         Pagination stops only on a failed/unparseable/empty result page —
         a page of already-seen entries does not end it early.
         """

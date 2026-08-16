@@ -145,7 +145,11 @@ class ZimukuProvider:
     def find_works(self, query):
         """Search the site for works: /search?q=... first, &p=2... after,
         capped at MAX_SEARCH_PAGES. Stops only on a failed or empty result
-        page — a page of already-seen entries does not end it early."""
+        page — a page of already-seen entries does not end it early.
+
+        Measured: like SubHD, multi-word queries are token-AND matched with
+        stopwords ignored, and %20 vs + space encoding are equivalent —
+        send titles verbatim."""
         if not query.title:
             return []
         base = f"{self.BASE_URL}/search?q={urllib.parse.quote(query.title)}&chost=zimuku.org"
