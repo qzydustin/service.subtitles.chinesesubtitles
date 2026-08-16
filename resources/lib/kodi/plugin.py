@@ -17,6 +17,7 @@ if _LIB_DIR not in sys.path:
 
 from core import service
 from core.archive import SUBTITLE_EXTS, shorten_names
+from core.autosave import VIDEO_EXTS, episode_marker, playback_pick, rename_map
 from core.filter import apply_filters
 from core.matcher import FOLDER_SEASON_RE, parse_filename, season_number
 from core.models import FORMATS, LANGS, SOURCES, WorkQuery, build_label, language_meta
@@ -233,6 +234,95 @@ def list_subtitles(subtitles):
         xbmcplugin.addDirectoryItem(handle=handle, url=url, listitem=item, isFolder=False)
 
 
+def player_setting(setting_id):
+    """Read a Kodi player setting via JSON-RPC; None on any failure."""
+    try:
+        reply = json.loads(xbmc.executeJSONRPC(json.dumps({
+            "jsonrpc": "2.0", "id": 1, "method": "Settings.GetSettingValue",
+            "params": {"setting": setting_id}})))
+        return reply.get("result", {}).get("value")
+    except Exception as e:
+        log(f"read setting {setting_id} failed: {e}", xbmc.LOGWARNING)
+        return None
+
+
+def fanout_folder(video_folder):
+    """Where pack/twin copies go, mirroring the player's subtitle storage
+    mode: the custom subtitle folder when chosen (usually because the video
+    folder is read-only), else next to the video. Both places are scanned
+    for external subtitles at playback."""
+    if player_setting("subtitles.storagemode") == 1:
+        return xbmcvfs.translatePath("special://subtitles")
+    return video_folder
+
+
+def autosave(result):
+    """Fan pack subtitles out to their videos and return the path to load
+    now ('' when no confident pick exists).
+
+    The returned file itself is NOT copied here: Kodi core stores it under
+    the player's subtitle storage settings, which this addon shouldn't
+    second-guess. Everything else in the download — other episodes of a
+    pack, language twins — core never touches, so those are copied here.
+    """
+    try:
+        video_path = xbmc.Player().getPlayingFile()
+    except Exception as e:
+        log(f"autosave skipped, nothing playing: {e}", xbmc.LOGWARNING)
+        return ""
+    stem = os.path.splitext(os.path.basename(video_path))[0]
+    video_folder = os.path.dirname(video_path)
+    if not video_folder or not stem:
+        return ""
+    try:
+        _, files = xbmcvfs.listdir(video_folder)
+    except Exception as e:
+        log(f"autosave: list {video_folder} failed: {e}", xbmc.LOGWARNING)
+        return ""
+    siblings = [os.path.splitext(f)[0] for f in files if f.lower().endswith(VIDEO_EXTS)]
+    mapping = rename_map(result.files, stem, siblings, season=episode_marker(stem)[0])
+    picked = playback_pick(mapping, stem, preferred=lang_preference())
+
+    folder = fanout_folder(video_folder)
+    fallback = xbmcvfs.translatePath("special://subtitles")
+
+    def copy_out(path, target):
+        """Copy into the fan-out folder; an unwritable video folder switches
+        the remaining copies to the subtitle storage folder. A vobsub .sub
+        takes its .idx index along."""
+        nonlocal folder
+        dst = folder.rstrip("/") + "/" + target
+        ok = xbmcvfs.copy(path, dst)
+        if not ok and fallback and folder != fallback:
+            folder = fallback
+            dst = folder.rstrip("/") + "/" + target
+            ok = xbmcvfs.copy(path, dst)
+        if not ok:
+            log(f"autosave: copy to {dst} failed", xbmc.LOGWARNING)
+            return
+        log(f"autosave: {os.path.basename(path)} -> {dst}")
+        if os.path.splitext(path)[1].lower() == ".sub":
+            idx_src = os.path.splitext(path)[0] + ".idx"
+            idx_dst = os.path.splitext(dst)[0] + ".idx"
+            if xbmcvfs.exists(idx_src) and xbmcvfs.copy(idx_src, idx_dst):
+                log(f"autosave: {os.path.basename(idx_src)} -> {idx_dst}")
+
+    for name, path in zip(result.files, result.paths):
+        if mapping.get(name) and name != picked:
+            copy_out(path, mapping[name] + os.path.splitext(name)[1].lower())
+    if not picked:
+        return ""
+    return result.paths[result.files.index(picked)]
+
+
+def lang_preference():
+    """Enabled filter languages in canonical order; a sensible default when
+    everything is off."""
+    settings = filter_settings()
+    langs = tuple(l for l in LANGS if settings.get(f"filter_lang_{l}"))
+    return langs or LANGS
+
+
 def do_download(link, provider):
     clean_temp()
     log(f"download {provider}: {link}")
@@ -242,8 +332,12 @@ def do_download(link, provider):
         xbmcgui.Dialog().notification(__scriptname__, __language__(30902), icon, 4000)
     if not result.files:
         return []
+    picked = autosave(result)
+    if picked:
+        return [picked]
     if len(result.files) == 1:
         return [result.paths[0]]
+    # nothing maps to the playing video: let the user pick
     display = result.display_names if __addon__.getSetting("cutsubfn") == "true" else result.files
     sel = choose("Choose Subtitle", display)
     if sel is None:

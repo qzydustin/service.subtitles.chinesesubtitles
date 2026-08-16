@@ -7,6 +7,9 @@ from ._gbk_codec import fix_zip_filename
 from .models import DownloadResult
 
 SUBTITLE_EXTS = (".srt", ".sub", ".smi", ".ssa", ".ass", ".sup", ".vtt")
+# vobsub index files ride along with their .sub (extracted but never
+# returned as pickable subtitles)
+SUBTITLE_SIDECAR_EXTS = (".idx",)
 ARCHIVE_EXTS = (".zip", ".7z", ".tar", ".bz2", ".rar", ".gz", ".xz", ".iso", ".tgz", ".tbz2", ".cbr")
 
 
@@ -37,7 +40,7 @@ def _extract_zip(path):
                 # Without the UTF-8 flag zipfile decodes names as cp437
                 name = info.filename if (info.flag_bits & 0x800) else fix_zip_filename(info.filename)
                 name = os.path.basename(name)
-                if name.lower().endswith(SUBTITLE_EXTS):
+                if name.lower().endswith(SUBTITLE_EXTS + SUBTITLE_SIDECAR_EXTS):
                     entries.append((name, info))
             if not entries:
                 return None, []
@@ -46,7 +49,8 @@ def _extract_zip(path):
             for name, info in entries:
                 with zf.open(info) as src, open(os.path.join(target, name), "wb") as dst:
                     dst.write(src.read())
-            return target, [name for name, _ in entries]
+            return target, [name for name, _ in entries
+                            if name.lower().endswith(SUBTITLE_EXTS)]
     except Exception:
         return None, []
 

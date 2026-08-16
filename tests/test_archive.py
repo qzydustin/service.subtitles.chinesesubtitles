@@ -85,3 +85,15 @@ def test_extract_zip_skips_non_subtitles():
             zf.writestr('readme.txt', 'not a subtitle')
         target, files = _extract_zip(zip_path)
         assert files == []
+
+
+def test_extract_zip_keeps_vobsub_sidecar():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        zip_path = os.path.join(tmpdir, 'test.zip')
+        with zipfile.ZipFile(zip_path, 'w') as zf:
+            zf.writestr('pack.chs.sub', b'\x00\x00fake vobsub')
+            zf.writestr('pack.chs.idx', b'VobSub index')
+            zf.writestr('readme.txt', 'noise')
+        target, files = _extract_zip(zip_path)
+        assert files == ['pack.chs.sub']  # pickable subtitles only
+        assert os.path.exists(os.path.join(target, 'pack.chs.idx'))  # sidecar saved

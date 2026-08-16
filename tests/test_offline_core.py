@@ -407,3 +407,99 @@ def test_filter_sorts_by_language_then_source():
         (["chs"], ["official"]), (["chs"], ["ai"]), (["chs"], ["machine"]),
         (["cht"], []), (["eng"], []),
     ]
+
+
+# ---- autosave ----
+
+def test_episode_marker_variants():
+    from core.autosave import episode_marker
+    assert episode_marker("Show.S02E05.720p") == (2, 5)
+    assert episode_marker("第12集") == (None, 12)
+    assert episode_marker("someone.EP3.x264") == (None, 3)
+    assert episode_marker("Movie.2010.1080p") == (None, None)
+
+
+def test_rename_map_single_subtitle():
+    from core.autosave import rename_map
+    assert rename_map(["pack.ass"], "Movie.2010", ["other.mkv"]) == {"pack.ass": "Movie.2010"}
+    # a language tag survives even a single rename, so a later twin download
+    # cannot overwrite this file
+    assert rename_map(["pack.chs.ass"], "Movie.2010", []) == {"pack.chs.ass": "Movie.2010.chs"}
+
+
+def test_rename_map_pack_matches_sibling_episodes():
+    from core.autosave import rename_map
+    subs = ["Show.S01E01.chs.ass", "Show.S01E02.chs.ass", "Show.S01E03.chs.ass"]
+    siblings = ["Show.S01E01.720p", "Show.S01E02.720p", "Show.S01E03.720p", "notes.txt"]
+    mapping = rename_map(subs, "Show.S01E02.720p", siblings)
+    assert mapping == {
+        "Show.S01E01.chs.ass": "Show.S01E01.720p.chs",
+        "Show.S01E02.chs.ass": "Show.S01E02.720p.chs",
+        "Show.S01E03.chs.ass": "Show.S01E03.720p.chs",
+    }
+
+
+def test_rename_map_twins_keep_language_tags():
+    from core.autosave import rename_map
+    subs = ["Show.S01E02.chs.ass", "Show.S01E02.cht.ass"]
+    assert rename_map(subs, "Show.S01E02.720p", []) == {
+        "Show.S01E02.chs.ass": "Show.S01E02.720p.chs",
+        "Show.S01E02.cht.ass": "Show.S01E02.720p.cht",
+    }
+
+
+def test_rename_map_unmarked_pack_entry_skipped():
+    from core.autosave import rename_map
+    mapping = rename_map(["readme.txt.srt", "Show.S01E02.chs.ass"],
+                         "Show.S01E02.720p", [])
+    assert mapping == {"Show.S01E02.chs.ass": "Show.S01E02.720p.chs"}
+
+
+def test_rename_map_season_disambiguation():
+    from core.autosave import rename_map
+    subs = ["t.S01E05.ass", "t.S02E05.ass"]
+    siblings = ["Show.S01E05.mkv", "Show.S02E05.mkv"]
+    mapping = rename_map(subs, "Show.S02E05.mkv", siblings, season=2)
+    assert mapping["t.S01E05.ass"] == "Show.S01E05.mkv"
+    assert mapping["t.S02E05.ass"] == "Show.S02E05.mkv"
+
+
+def test_rename_map_movie_twins():
+    from core.autosave import rename_map
+    subs = ["Inception.chs.srt", "Inception.cht.srt"]
+    assert rename_map(subs, "Inception.2010", []) == {
+        "Inception.chs.srt": "Inception.2010.chs",
+        "Inception.cht.srt": "Inception.2010.cht",
+    }
+
+
+def test_playback_pick_prefers_enabled_language():
+    from core.autosave import playback_pick, rename_map
+    subs = ["Show.S01E02.chs.ass", "Show.S01E02.cht.ass"]
+    mapping = rename_map(subs, "Show.S01E02.720p", [])
+    assert playback_pick(mapping, "Show.S01E02.720p") == "Show.S01E02.chs.ass"
+    assert playback_pick(mapping, "Show.S01E02.720p", preferred=("cht",)) == "Show.S01E02.cht.ass"
+
+
+def test_playback_pick_current_episode_and_no_match():
+    from core.autosave import playback_pick, rename_map
+    subs = ["Show.S01E01.ass", "Show.S01E02.ass", "Show.S01E03.ass"]
+    mapping = rename_map(subs, "Show.S01E02.720p", ["Show.S01E01.mkv", "Show.S01E03.mkv"])
+    assert playback_pick(mapping, "Show.S01E02.720p") == "Show.S01E02.ass"
+    # nothing maps to the playing video -> caller falls back to the picker
+    assert playback_pick({}, "Show.S01E02.720p") == ""
+    assert playback_pick(mapping, "Different.Video") == ""
+
+
+def test_lang_tag_composites():
+    from core.autosave import lang_tag
+    assert lang_tag("X.chs&eng.ass") == "chs&eng"
+    assert lang_tag("X.cht+eng.ass") == "cht+eng"
+    assert lang_tag("X.chs.ass") == "chs"
+
+
+def test_rename_map_composite_tag_distinct():
+    from core.autosave import rename_map
+    subs = ["S.S01E02.chs&eng.ass", "S.S01E02.chs.ass"]
+    mapping = rename_map(subs, "Show.S01E02", [])
+    assert set(mapping.values()) == {"Show.S01E02.chs&eng", "Show.S01E02.chs"}

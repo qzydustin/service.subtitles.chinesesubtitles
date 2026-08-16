@@ -14,6 +14,7 @@ if lib_dir not in sys.path:
     sys.path.insert(0, lib_dir)
 
 import xbmc
+import xbmcvfs
 from kodi import plugin
 
 
@@ -149,3 +150,21 @@ def test_query_specials_drop_season_zero(monkeypatch):
 def test_query_nothing_playing(monkeypatch):
     with_player(monkeypatch, FakePlayer())
     assert plugin.current_query() is None
+
+
+def test_player_setting_lookup(monkeypatch):
+    reply = json.dumps({"result": {"value": 1}})
+    monkeypatch.setattr(xbmc, "executeJSONRPC", lambda req: reply)
+    assert plugin.player_setting("subtitles.storagemode") == 1
+    monkeypatch.setattr(xbmc, "executeJSONRPC", lambda req: "not json")
+    assert plugin.player_setting("subtitles.storagemode") is None
+
+
+def test_fanout_folder_follows_storage_mode(monkeypatch):
+    monkeypatch.setattr(plugin, "player_setting", lambda sid: 1)
+    monkeypatch.setattr(xbmcvfs, "translatePath", lambda p: "/custom/subs" if p == "special://subtitles" else "")
+    assert plugin.fanout_folder("/videos/Show") == "/custom/subs"
+    monkeypatch.setattr(plugin, "player_setting", lambda sid: 0)
+    assert plugin.fanout_folder("/videos/Show") == "/videos/Show"
+    monkeypatch.setattr(plugin, "player_setting", lambda sid: None)  # lookup failed
+    assert plugin.fanout_folder("/videos/Show") == "/videos/Show"
