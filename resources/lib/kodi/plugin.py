@@ -2,7 +2,6 @@
 """Kodi plugin layer: adapts the xbmc runtime to the pure core library."""
 import json
 import os
-import re
 import sys
 import urllib.parse
 
@@ -19,8 +18,8 @@ if _LIB_DIR not in sys.path:
 from core import service
 from core.archive import SUBTITLE_EXTS, shorten_names
 from core.filter import apply_filters
-from core.matcher import CN_NUM, parse_filename
-from core.models import WorkQuery, build_label, language_meta
+from core.matcher import FOLDER_SEASON_RE, parse_filename, season_number
+from core.models import FORMATS, LANGS, SOURCES, WorkQuery, build_label, language_meta
 
 __addon__ = xbmcaddon.Addon()
 __scriptid__ = __addon__.getAddonInfo("id")
@@ -87,20 +86,15 @@ def clean_temp():
 
 def filter_settings():
     """Read addon settings into the plain dict core's filter expects."""
-    keys = ("filter_bilingual",
-            "filter_src_official", "filter_src_reprint", "filter_src_original",
-            "filter_src_ai", "filter_src_machine",
-            "filter_lang_chs", "filter_lang_cht", "filter_lang_eng",
-            "filter_fmt_ass", "filter_fmt_srt", "filter_fmt_ssa", "filter_fmt_sub",
-            "filter_fmt_sup", "filter_fmt_vtt")
+    keys = (["filter_bilingual"]
+            + [f"filter_src_{k}" for k in SOURCES]
+            + [f"filter_lang_{k}" for k in LANGS]
+            + [f"filter_fmt_{k}" for k in FORMATS])
     return {k: __addon__.getSetting(k) == "true" for k in keys}
 
 
 # ---- actions ----
 
-# trailing season marker in folder names: "电锯人 第一季", "Show Season 2", "Show S02"
-FOLDER_SEASON_RE = re.compile(
-    r'(?:第([一二三四五六七八九十\d]+)\s*季|season\s*(\d+)|S(\d{1,2}))\s*$', re.I)
 GENERIC_FOLDERS = {"movie", "movies", "tv", "tvshows", "shows", "series",
                    "video", "videos", "media", "download", "downloads", "新建文件夹"}
 
@@ -122,8 +116,7 @@ def release_query(stem, folder):
         season = ""
         m = FOLDER_SEASON_RE.search(folder)
         if m:
-            raw = m.group(1) or m.group(2) or m.group(3)
-            num = int(raw) if raw.isdigit() else CN_NUM.get(raw, 0)
+            num = season_number(m.group(1) or m.group(2) or m.group(3))
             season = str(num) if num else ""
             folder = folder[:m.start()].strip(" .-_")
         folder_parsed = parse_filename(folder)

@@ -4,13 +4,27 @@ import re
 
 CN_NUM = {"一": 1, "二": 2, "三": 3, "四": 4, "五": 5,
           "六": 6, "七": 7, "八": 8, "九": 9, "十": 10}
-SEASON_RE = re.compile(r'第([一二三四五六七八九十\d]+)\s*季|season\s*(\d+)', re.I)
-YEAR_RE = re.compile(r'[（(]\s*((?:19|20)\d{2})\s*[)）]')
+_CN_DIGITS = "".join(CN_NUM)  # charset of a Chinese season count
+_CN_SEASON = rf'第([{_CN_DIGITS}\d]+)\s*季'
+_WORD_SEASON = r'season\s*(\d+)'
+SEASON_RE = re.compile(f'{_CN_SEASON}|{_WORD_SEASON}', re.I)
+_CENTURY = r'(?:19|20)\d{2}'
+YEAR_RE = re.compile(rf'[（(]\s*({_CENTURY})\s*[)）]')
+
+TITLE_STOPWORDS = {"the"}  # ignored when comparing site titles
 
 
-def _season_number(raw):
-    """Chinese-numeral or digit season string -> int (0 when unparsable)."""
-    return int(raw) if raw.isdigit() else CN_NUM.get(raw, 0)
+def season_number(raw):
+    """Chinese-numeral or digit season string -> int (0 when unparsable).
+    Compounds through 九十九 parse: 十一 -> 11, 二十九 -> 29."""
+    if raw.isdigit():
+        return int(raw)
+    tens, sep, ones = raw.partition("十")
+    if not sep:
+        return CN_NUM.get(raw, 0)
+    if (not tens or tens in CN_NUM) and (not ones or ones in CN_NUM):
+        return (CN_NUM[tens] if tens else 1) * 10 + (CN_NUM[ones] if ones else 0)
+    return 0
 
 
 def parse_meta(title):
@@ -21,11 +35,11 @@ def parse_meta(title):
         year, title = m.group(1), YEAR_RE.sub(" ", title)
     m = SEASON_RE.search(title)
     if m:
-        season = str(_season_number(m.group(1) or m.group(2)))
-        if season == "0":  # season counts the table can't parse (eleven and up) mean none
+        season = str(season_number(m.group(1) or m.group(2)))
+        if season == "0":  # unparsable season counts (garbage, 百 and up) mean none
             season = ""
         title = SEASON_RE.sub(" ", title)
-    tokens = set(re.sub(r"[^\w\s]", " ", title.lower()).split()) - {"the"}
+    tokens = set(re.sub(r"[^\w\s]", " ", title.lower()).split()) - TITLE_STOPWORDS
     return tokens, season, year
 
 
@@ -45,14 +59,34 @@ def works_match(a, b):
 
 # ---- filename parsing (fallback for unscraped media) ----
 
+# trailing season marker in folder names: "电锯人 第一季", "Show Season 2", "Show S02"
+FOLDER_SEASON_RE = re.compile(rf'(?:{_CN_SEASON}|{_WORD_SEASON}|S(\d{{1,2}}))\s*$', re.I)
 SE_EP_RE = re.compile(r'[sS](\d{1,2})[eE](\d{1,3})\b')
-CN_SEASON_EP_RE = re.compile(r'第([一二三四五六七八九十\d]+)季.*?第\s*(\d+)\s*集')
-YEAR_TOKEN_RE = re.compile(r'^(?:19|20)\d{2}$')
-RELEASE_JUNK_RE = re.compile(
-    r'(?:720p|1080[pi]|2160p|4k|x264|x265|h\.?264|h\.?265|hevc|avc'
-    r'|blu?ray|bdrip|brrip|web[\-.]?dl|webrip|web|hdtv|dvdrip|remux'
-    r'|proper|repack|internal|limited|extended|complete|hdrip|amzn|nf|ddp?5?\.?\d?|10bit|8bit|hdr(?:10)?|dv)',
-    re.I)
+CN_SEASON_EP_RE = re.compile(rf'第([{_CN_DIGITS}\d]+)季.*?第\s*(\d+)\s*集')
+YEAR_TOKEN_RE = re.compile(rf'^{_CENTURY}$')
+
+# release tags stripped from parsed titles, grouped by what they describe;
+# the sub runs on tokens already split on . _ - space, so only dot-free
+# spellings can occur (h264, never h.264)
+JUNK_TAGS = {
+    "resolution": ("720p", "1080p", "1080i", "2160p", "4k"),
+    "codec": ("x264", "x265", "h264", "h265", "hevc", "avc"),
+    "source": ("bluray", "bdrip", "brrip", "webdl", "webrip", "web",
+               "hdtv", "dvdrip", "remux", "hdrip"),
+    "platform": ("amzn", "nf"),
+    "audio": ("dd", "ddp", "dd5", "dd51", "ddp5", "ddp51"),
+    "edition": ("proper", "repack", "internal", "limited", "extended", "complete"),
+    "range": ("8bit", "10bit", "hdr", "hdr10", "dv"),
+}
+
+
+def _any_of(tags):
+    """Literal-tag alternation, longest first so 'webdl' is not
+    half-stripped by 'web'."""
+    return "|".join(re.escape(t) for t in sorted(tags, key=len, reverse=True))
+
+
+RELEASE_JUNK_RE = re.compile(_any_of(sum(JUNK_TAGS.values(), ())), re.I)
 
 
 def _strip_extension(name):
@@ -83,7 +117,7 @@ def parse_filename(name):
     else:
         m = CN_SEASON_EP_RE.search(name)
         if m:
-            out["season"] = str(_season_number(m.group(1)) or "")
+            out["season"] = str(season_number(m.group(1)) or "")
             out["episode"] = m.group(2).lstrip("0") or "0"
             name = name[:m.start()]
 

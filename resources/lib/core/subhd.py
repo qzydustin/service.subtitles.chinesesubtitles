@@ -8,9 +8,8 @@ from bs4 import BeautifulSoup
 from .archive import save_and_extract
 from .http import filename_from_headers, make_session, noop_log
 from .matcher import parse_meta
-from .models import DownloadResult, Subtitle, Tags, Work
+from .models import FORMATS, DownloadResult, Subtitle, Tags, Work
 
-FORMATS = ("ASS", "SRT", "SSA", "SUB", "SUP", "VTT")
 # Chinese origin badge -> normalized source tag
 SOURCE_MAP = {"转载精修": "reprint", "官方字幕": "official", "原创翻译": "original",
               "机器翻译": "machine", "AI翻润色": "ai"}
@@ -233,8 +232,8 @@ class SubhdProvider:
                 if "双语" in text: tags.bilingual = True
             if "text-secondary" in classes:
                 for fmt in FORMATS:
-                    if fmt in text.upper():
-                        tags.fmt.append(fmt.lower())
+                    if fmt.upper() in text.upper():
+                        tags.fmt.append(fmt)
                         break
         return tags
 

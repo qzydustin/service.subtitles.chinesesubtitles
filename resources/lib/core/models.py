@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Data models shared across the core library."""
+"""Data models and tag vocabularies shared across the core library."""
 from dataclasses import dataclass, field
 
 
@@ -57,8 +57,15 @@ class DownloadResult:
     paths: list = field(default_factory=list)
 
 
+# canonical vocabularies of the Tags fields; SOURCES is ordered best-first
+# (the filter ranks by that order, settings ids are filter_{group}_{key})
+LANGS = ("chs", "cht", "eng")
+FORMATS = ("ass", "srt", "ssa", "sub", "sup", "vtt")
+SOURCES = ("official", "reprint", "original", "ai", "machine")
+
+LANG_MARKS = {"chs": "简", "cht": "繁", "eng": "英"}
 SOURCE_LABELS = {"official": "官方", "reprint": "精修", "original": "原创", "ai": "AI", "machine": "机翻"}
-FORMAT_LABELS = {"ass": "ASS", "srt": "SRT", "ssa": "SSA", "sub": "SUB", "sup": "SUP", "vtt": "VTT"}
+FORMAT_LABELS = {fmt: fmt.upper() for fmt in FORMATS}
 
 
 def build_label(tags, filename=""):
@@ -66,8 +73,7 @@ def build_label(tags, filename=""):
     label = ""
     if tags.production:
         label += f"[{tags.production}]"
-    lang_marks = {"chs": "简", "cht": "繁", "eng": "英"}
-    marks = "".join(lang_marks[x] for x in ("chs", "cht", "eng") if x in tags.lang)
+    marks = "".join(LANG_MARKS[x] for x in LANGS if x in tags.lang)
     if marks:
         label += f"[{marks}]"
     for key, text in SOURCE_LABELS.items():

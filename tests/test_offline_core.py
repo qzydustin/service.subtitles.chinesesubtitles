@@ -12,7 +12,7 @@ from core import service
 from core.archive import shorten_names
 from core.filter import apply_filters
 from core.http import filename_from_headers
-from core.matcher import parse_filename, parse_meta, works_match
+from core.matcher import parse_filename, parse_meta, season_number, works_match
 from core.models import Subtitle, Tags, Work, WorkQuery, build_label, language_meta
 
 
@@ -58,10 +58,21 @@ def test_match_chinese_numeral_season():
     assert works_match("绝命毒师 第二季 Breaking Bad", "绝命毒师 Season 2 Breaking Bad")
 
 
-def test_match_complex_season_treated_as_none():
-    # Chinese-numeral seasons above ten don't parse; they count as no season
+def test_match_compound_numeral_season():
+    # Chinese-numeral compounds through 九十九 parse like their digit forms
     _, season, _ = parse_meta("神秘博士 第十一季")
-    assert season == ""
+    assert season == "11"
+    assert works_match("神秘博士 第十一季", "神秘博士 Season 11")
+
+
+def test_season_number_compounds():
+    assert season_number("2") == 2 and season_number("二") == 2
+    assert season_number("十") == 10 and season_number("十一") == 11
+    assert season_number("二十") == 20 and season_number("二十九") == 29
+    assert season_number("九十九") == 99
+    # garbage numerals stay unparsable, not misread as a nearby value
+    assert season_number("十x") == 0 and season_number("x十") == 0
+    assert season_number("百") == 0 and season_number("十一一") == 0
 
 
 def test_match_normalizes_punctuation_and_case():
@@ -317,6 +328,9 @@ def test_parse_filename_lowercase_marker():
 def test_parse_filename_strips_release_tags_best_effort():
     out = parse_filename("Some.Show.2160p.HDTV.x265")
     assert out["title"] == "Some Show"
+    # dot-free junk spellings all strip, longest tag first (WEBDL goes whole,
+    # HDR10 is not half-stripped by HDR)
+    assert parse_filename("Show.10bit.HDR10.WEBDL.DDP51.x264")["title"] == "Show"
     # files without a year or episode marker keep some tag residue ("DL");
     # acceptable for a fallback path, both sites' search tolerates it
     assert parse_filename("Some.Show.WEB-DL.2160p")["title"] == "Some Show DL"

@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
 """Filter and rank subtitles according to user settings."""
 from .http import noop_log
+from .models import FORMATS, LANGS, SOURCES
 
-_SOURCE_RANK = {"official": 0, "reprint": 1, "original": 2, "ai": 3, "machine": 4}
+_SOURCE_RANK = {s: i for i, s in enumerate(SOURCES)}  # SOURCES order is best-first
 
 
 def sort_key(subtitle):
@@ -31,14 +32,9 @@ def apply_filters(subtitles, settings, log=noop_log):
     """
     if not subtitles:
         return []
-    allowed_src = [k for k, setting in (
-        ("official", "src_official"), ("reprint", "src_reprint"), ("original", "src_original"),
-        ("ai", "src_ai"), ("machine", "src_machine")) if settings.get(setting)]
-    allowed_lang = [k for k, setting in (
-        ("chs", "lang_chs"), ("cht", "lang_cht"), ("eng", "lang_eng")) if settings.get(setting)]
-    allowed_fmt = [k for k, setting in (
-        ("ass", "fmt_ass"), ("srt", "fmt_srt"), ("ssa", "fmt_ssa"), ("sub", "fmt_sub"),
-        ("sup", "fmt_sup"), ("vtt", "fmt_vtt")) if settings.get(setting)]
+    allowed_src = [k for k in SOURCES if settings.get(f"src_{k}")]
+    allowed_lang = [k for k in LANGS if settings.get(f"lang_{k}")]
+    allowed_fmt = [k for k in FORMATS if settings.get(f"fmt_{k}")]
 
     kept = []
     for s in subtitles:
