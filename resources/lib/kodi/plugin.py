@@ -96,30 +96,41 @@ def filter_settings():
 
 # ---- actions ----
 
-def do_search(item):
-    if item["mansearch"]:
-        query = WorkQuery(title=item["mansearchstr"])
-    elif item["tvshow"]:
-        query = WorkQuery(
-            title=item["tvshow"],
-            year=item.get("year") or "",
-            season=item.get("season") or "",
-            episode=item.get("episode") or "",
-            is_tv=True,
-        )
-    elif item["title"]:
-        query = WorkQuery(title=item["title"], year=item.get("year") or "")
-    else:
-        # unscraped media: squeeze a title out of the filename
-        parsed = parse_filename(item.get("filename") or "")
-        log(f"no scraped title; filename parse: {parsed}")
-        query = WorkQuery(
-            title=parsed["title"], year=parsed["year"],
-            season=parsed["season"], episode=parsed["episode"],
-            is_tv=bool(parsed["season"] or parsed["episode"]),
-        )
-    log(f"search query: {query}")
+def current_query():
+    """Build a WorkQuery from the playing video's info tag.
 
+    The typed tag API is the single source of truth (int season/episode/year,
+    no localized info-label strings); release-name parsing covers unscraped
+    files. Returns None when no usable item is playing.
+    """
+    player = xbmc.Player()
+    try:
+        tag = player.getVideoInfoTag()
+        filename = os.path.basename(player.getPlayingFile())
+    except Exception as e:
+        log(f"no playing video metadata: {e}", xbmc.LOGWARNING)
+        return None
+    tvshow = tag.getTVShowTitle().strip()
+    title = (tvshow or tag.getTitle().strip() or tag.getOriginalTitle().strip())
+    year = str(tag.getYear()) if tag.getYear() else ""
+    if not title:
+        # unscraped media: squeeze a title out of the release name
+        parsed = parse_filename(filename)
+        log(f"no scraped title; filename parse: {parsed}")
+        return WorkQuery(title=parsed["title"], year=parsed["year"],
+                         season=parsed["season"], episode=parsed["episode"],
+                         is_tv=bool(parsed["season"] or parsed["episode"]))
+    if tvshow:
+        season, episode = tag.getSeason(), tag.getEpisode()
+        return WorkQuery(title=tvshow, year=year,
+                         season=str(season) if season > 0 else "",
+                         episode=str(episode) if episode > 0 else "",
+                         is_tv=True)
+    return WorkQuery(title=title, year=year)
+
+
+def do_search(query):
+    log(f"search query: {query}")
     work = service.resolve_work(query, choose=choose, log=log)
     if not work:
         return
@@ -181,19 +192,12 @@ def run():
 
     action = params.get("action")
     if action in ("search", "manualsearch"):
-        item = {
-            "mansearch": False,
-            "year": xbmc.getInfoLabel("VideoPlayer.Year"),
-            "season": xbmc.getInfoLabel("VideoPlayer.Season"),
-            "episode": xbmc.getInfoLabel("VideoPlayer.Episode"),
-            "tvshow": xbmc.getInfoLabel("VideoPlayer.TVshowtitle"),
-            "title": xbmc.getInfoLabel("VideoPlayer.Title"),
-            "filename": xbmc.getInfoLabel("Player.Filename"),
-        }
         if "searchstring" in params:
-            item["mansearch"] = True
-            item["mansearchstr"] = params["searchstring"]
-        do_search(item)
+            query = WorkQuery(title=params["searchstring"])
+        else:
+            query = current_query()
+        if query and query.title:
+            do_search(query)
     elif action == "download":
         for path in do_download(params["link"], params.get("provider")):
             xbmcplugin.addDirectoryItem(
