@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import datetime
 import hashlib
 import html
 import os
@@ -39,6 +40,10 @@ def copy_addon_zip():
     target_dir = ZIPS_DIR / ADDON_ID
     target_dir.mkdir(parents=True)
     shutil.copy2(source, target_dir / zip_name)
+    # the repo listing shows these next to the zip before the add-on is
+    # installed (Kodi wiki: each add-on dir should contain the <assets>)
+    for asset in ("resources/icon.png", "resources/fanart.jpeg"):
+        shutil.copy2(asset, target_dir / Path(asset).name)
 
 
 def build_repository_zip():
@@ -80,16 +85,30 @@ def write_addons_xml():
 def write_index_html():
     readme = Path("README.md").read_text(encoding="utf-8")
     body = markdown.markdown(readme, extensions=["fenced_code", "nl2br", "sane_lists"])
+    # this page IS the download page: drop the README's pointer to it
+    # (silently kept again if the README wording ever changes)
+    body = body.replace(
+        '<p>也可以从<a href="https://qzydustin.github.io/service.subtitles.chinesesubtitles/">'
+        '下载页面</a>直接下载。</p>', "")
+    # the downloads box leads the page: split the rendered README at its
+    # first section heading so the links sit right after the intro
+    intro, sep, sections = body.partition("<h2")
+    sections = sep + sections
 
     repo_version = read_addon_version(Path(REPO_ID) / "addon.xml")
     addon_version = read_addon_version("addon.xml")
     repo_zip = f"{REPO_ID}-{repo_version}.zip"
     addon_zip = f"repo/zips/{ADDON_ID}/{ADDON_ID}-{addon_version}.zip"
+    # Kodi's HTTPS directory browser lists this very page's anchors, but
+    # only accepts those whose link text equals the href (HTTPDirectory's
+    # NameMatchesLink) — the zip filenames must stay the anchor text, and
+    # human annotations ride along outside the <a>. Kodi fetches
+    # addons.xml/addons.xml.md5 by URL from the repository add-on's own
+    # addon.xml, so the page needs no link to them
     downloads = """<h2>下载</h2>
 <ul>
-  <li><a href="{repo_zip}">{repo_zip}</a></li>
-  <li><a href="{addon_zip}">{addon_name}</a></li>
-  <li><a href="repo/zips/addons.xml">addons.xml</a></li>
+  <li><a href="{repo_zip}">{repo_zip}</a>（推荐，可自动接收更新）</li>
+  <li><a href="{addon_zip}">{addon_name}</a>（直接安装当前版本，更新需重装）</li>
 </ul>
 """.format(
         repo_zip=html.escape(repo_zip),
@@ -102,7 +121,8 @@ def write_index_html():
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>ChineseSubtitles - Kodi 中文字幕插件</title>
+  <title>ChineseSub</title>
+  <meta name="description" content="Kodi 中文字幕插件 ChineseSub：从 SubHD 和 Zimuku 搜索下载字幕。">
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
@@ -154,7 +174,7 @@ def write_index_html():
       padding: 1.5rem;
     }
     .downloads h2 { border-bottom: none; margin-top: 0; color: #1a4a7a; }
-    .downloads li { margin-bottom: 0.4rem; }
+    .downloads li { margin-bottom: 0.6rem; }
     footer {
       text-align: center;
       margin-top: 2rem;
@@ -165,15 +185,22 @@ def write_index_html():
 </head>
 <body>
 <div class="container">
-%s
+{{INTRO}}
 <div class="downloads">
-%s
+{{DOWNLOADS}}
 </div>
-<footer><a href="https://github.com/qzydustin/service.subtitles.chinesesubtitles">GitHub</a> &middot; ChineseSubtitles &copy; 2025</footer>
+{{SECTIONS}}
+<footer><a href="https://github.com/qzydustin/service.subtitles.chinesesubtitles">GitHub</a> &middot; ChineseSubtitles &copy; {{YEAR}}</footer>
 </div>
 </body>
 </html>
-""" % (body, downloads)
+"""
+    # placeholder replace, not %-format: the CSS must stay free to use %
+    content = (content
+               .replace("{{INTRO}}", intro)
+               .replace("{{SECTIONS}}", sections)
+               .replace("{{DOWNLOADS}}", downloads)
+               .replace("{{YEAR}}", str(datetime.date.today().year)))
     (SITE_DIR / "index.html").write_text(content, encoding="utf-8")
 
 
