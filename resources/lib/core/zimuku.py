@@ -275,21 +275,16 @@ class ZimukuProvider:
                 resp = self.session.get(file_url, headers={"Referer": dl_url}, timeout=10)
                 if resp.status_code != 200:
                     continue
-                filename = filename_from_headers(resp.headers.get("Content-Disposition"), url=file_url)
-                if not filename:
-                    continue
-                file_data = resp.content
-                if len(file_data) > FILE_MIN_SIZE:
+                name = filename_from_headers(resp.headers.get("Content-Disposition"), url=file_url)
+                if name and len(resp.content) > FILE_MIN_SIZE:
+                    filename, file_data = html.unescape(name), resp.content
                     break
             except Exception as e:
                 self.log(f"zimuku: download {file_url} failed: {e}")
-        if not filename or not file_data or len(file_data) <= FILE_MIN_SIZE:
+        if not file_data:
             return DownloadResult()
 
-        filename = html.unescape(filename)
-        dot = filename.rfind(".")
-        if dot != -1:
-            filename = filename[:dot] + filename[dot:].lower()
-        if filename.lower().endswith(SUBTITLE_EXTS) or filename.lower().endswith(ARCHIVE_EXTS):
-            return save_and_extract(dest, filename, file_data, self.backend)
-        return DownloadResult()
+        # every consumer downstream compares extensions case-insensitively
+        if not filename.lower().endswith(SUBTITLE_EXTS + ARCHIVE_EXTS):
+            return DownloadResult()
+        return save_and_extract(dest, filename, file_data, self.backend)

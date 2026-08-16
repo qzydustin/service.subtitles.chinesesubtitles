@@ -179,7 +179,8 @@ class FakeProvider:
 
     def download(self, link, dest):
         from core.models import DownloadResult
-        return DownloadResult("ok", [link], [link], [dest + "/" + link])
+        return DownloadResult("ok", files=[link], display_names=[link],
+                              paths=[dest + "/" + link])
 
 
 class RaisingProvider(FakeProvider):

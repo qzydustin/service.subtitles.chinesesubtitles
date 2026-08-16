@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Offline captcha tests: both solvers and the SubHD captcha retry path.
+"""Offline tests: Zimuku's BMP captcha solver and the SubHD download flow.
 
 Site captchas only appear under IP throttling, so live tests cannot cover
 them reliably; synthetic samples keep the logic and wiring intact.
@@ -17,27 +17,8 @@ lib_dir = os.path.join(base_dir, "resources", "lib")
 if lib_dir not in sys.path:
     sys.path.insert(0, lib_dir)
 
-from core.models import DownloadResult
-from core.subhd import SubhdProvider, SubhdSolver
+from core.subhd import SubhdProvider
 from core.zimuku import ZimukuProvider, ZimukuSolver
-
-
-def _svg_with_paths(spec):
-    """spec: [(start_x, path_len)] -> synthetic SVG (solver keys on path length)."""
-    paths = []
-    for x, length in spec:
-        d = "M%d 1" % x
-        d += "9" * (length - len(d))
-        assert len(d) == length
-        paths.append('<path d="%s"/>' % d)
-    return "<svg>" + "".join(paths) + "</svg>"
-
-
-def test_subhd_solver_known_lengths():
-    # (start_x, length) -> LENGTH_MAP first choice: 998->'1', 2246->'E', 2606->'5', 3033->'9'
-    # plus one short noise path (length 100) that must be filtered out
-    svg = _svg_with_paths([(5, 100), (10, 998), (30, 2246), (50, 2606), (70, 3033)])
-    assert SubhdSolver().solve(svg) == "1E59"
 
 
 _ZIMUKU_POINTS = [(10, 7), (7, 8), (12, 8), (10, 13), (7, 19), (12, 19), (10, 20), (6, 13), (14, 13)]
@@ -90,12 +71,12 @@ class _Resp:
 
 
 class _FakeSession:
-    """Replays the SubHD download flow: detail -> prepare -> (captcha) -> file."""
+    """Replays the SubHD download flow: detail -> prepare -> (refusal) -> file."""
 
-    def __init__(self, file_content, file_cd, first_passes=False):
+    def __init__(self, file_content, file_cd, refuse=False):
         self.file_content = file_content
         self.file_cd = file_cd
-        self.first_passes = first_passes
+        self.refuse = refuse
         self.down_payloads = []
 
     def get(self, url, headers=None, timeout=None):
@@ -110,32 +91,30 @@ class _FakeSession:
     def post(self, url, json=None, headers=None, timeout=None):
         if "prepare-download" in url:
             return _Resp(json_data={"success": True, "url": "/down/TEST1"})
-        self.down_payloads.append(dict(json))  # provider mutates its payload in place
-        if len(self.down_payloads) == 1 and not self.first_passes:
-            captcha = _svg_with_paths([(10, 998), (30, 2246), (50, 2606)])
-            return _Resp(json_data={"success": False, "pass": False, "msg": captcha, "url": None})
+        self.down_payloads.append(dict(json))
+        if self.refuse and len(self.down_payloads) == 1:
+            return _Resp(json_data={"success": False, "pass": False,
+                                    "msg": "下载频率过高，请不要再试", "url": None})
         return _Resp(json_data={"success": True, "pass": True, "url": "https://dl.subhd.me/x.zip"})
 
 
-def test_subhd_download_captcha_retry():
-    session = _FakeSession(file_content=_zip_bytes("Chainsaw.Man.S01E01.chs.ass"),
-                           file_cd='attachment; filename="cap.zip"')
+def test_subhd_download_throttle_refusal():
+    # measured 2026-08: throttling answers with plain text, the old-site SVG
+    # captcha is gone; the one-time temp page is spent, so no retry may happen
+    session = _FakeSession(file_content=_zip_bytes("x.ass"),
+                           file_cd='attachment; filename="cap.zip"', refuse=True)
     with tempfile.TemporaryDirectory() as dest:
         provider = SubhdProvider()
         provider.session = session
         result = provider.download("https://subhd.tv/a/TEST1", dest)
-        assert len(session.down_payloads) == 2, "captcha retry did not happen"
-        assert session.down_payloads[0]["cap"] == ""
-        assert session.down_payloads[1]["cap"] == "1E5", "retry did not carry the solved captcha"
-        assert result.status == "ok"
-        assert result.files == ["Chainsaw.Man.S01E01.chs.ass"]
-        assert os.path.exists(result.paths[0])
+    assert len(session.down_payloads) == 1, "must not retry a refusal"
+    assert result.status == "failed"
+    assert "下载频率过高" in result.reason
 
 
 def test_subhd_download_invalid_file_has_no_kodi_dependency():
     # a non-subtitle payload must surface as status='invalid' without xbmc
-    session = _FakeSession(file_content=b"NOT A SUBTITLE", file_cd='attachment; filename="note.bin"',
-                           first_passes=True)
+    session = _FakeSession(file_content=b"NOT A SUBTITLE", file_cd='attachment; filename="note.bin"')
     with tempfile.TemporaryDirectory() as dest:
         provider = SubhdProvider()
         provider.session = session

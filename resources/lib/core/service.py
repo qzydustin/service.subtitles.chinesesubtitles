@@ -126,5 +126,5 @@ def search_all(query, work, log=noop_log):
 
 def download(link, provider="subhd", dest="", log=noop_log, backend=None):
     """Download one subtitle into dest via the named provider."""
-    cls = PROVIDERS.get(provider) or next(iter(PROVIDERS.values()))
+    cls = PROVIDERS.get(provider) or PROVIDERS["subhd"]
     return cls(log=log, backend=backend).download(link, dest)

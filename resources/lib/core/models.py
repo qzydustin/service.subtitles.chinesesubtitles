@@ -52,6 +52,7 @@ class Subtitle:
 class DownloadResult:
     """Outcome of a subtitle download."""
     status: str = "failed"  # 'ok', 'invalid' (not a subtitle) or 'failed'
+    reason: str = ""        # server-side refusal message, shown to the user
     files: list = field(default_factory=list)
     display_names: list = field(default_factory=list)  # shortened names for pickers
     paths: list = field(default_factory=list)

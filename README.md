@@ -1,6 +1,6 @@
 # ChineseSubtitles
 
-Kodi 21+ 中文字幕插件，支持从 SubHD 和 Zimuku 搜索下载字幕，自动绕过两个站点的验证码。
+Kodi 21+ 中文字幕插件，支持从 SubHD 和 Zimuku 搜索下载字幕，自动绕过 Zimuku 的云锁验证码。
 
 ## 安装
 
@@ -44,7 +44,7 @@ GPL-3.0-only
 
 ## 致谢
 
-- [svg-captcha-recognize](https://github.com/haua/svg-captcha-recognize) — SubHD 验证码处理的启发。
+- [svg-captcha-recognize](https://github.com/haua/svg-captcha-recognize) — 历史上的 SubHD 验证码处理启发（该形式已随站点改版移除）。
 - [zimuku_for_kodi](https://github.com/pizzamx/zimuku_for_kodi) — Zimuku 站点流程参考。
 - Zimuku 和 SubHD 提供的字幕资源，以及字幕作者的无偿奉献。
 

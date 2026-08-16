@@ -318,6 +318,9 @@ def do_download(link, provider):
     if result.status == "invalid":
         icon = os.path.join(__cwd__, "resources", "icon.png")
         xbmcgui.Dialog().notification(__scriptname__, __language__(30902), icon, 4000)
+    if result.reason:
+        icon = os.path.join(__cwd__, "resources", "icon.png")
+        xbmcgui.Dialog().notification(__scriptname__, result.reason, icon, 4000)
     if not result.files:
         return []
     picked = autosave(result)
