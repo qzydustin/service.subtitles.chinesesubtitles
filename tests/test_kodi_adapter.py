@@ -152,19 +152,11 @@ def test_query_nothing_playing(monkeypatch):
     assert plugin.current_query() is None
 
 
-def test_player_setting_lookup(monkeypatch):
-    reply = json.dumps({"result": {"value": 1}})
-    monkeypatch.setattr(xbmc, "executeJSONRPC", lambda req: reply)
-    assert plugin.player_setting("subtitles.storagemode") == 1
-    monkeypatch.setattr(xbmc, "executeJSONRPC", lambda req: "not json")
-    assert plugin.player_setting("subtitles.storagemode") is None
-
-
 def test_fanout_folder_follows_storage_mode(monkeypatch):
-    monkeypatch.setattr(plugin, "player_setting", lambda sid: 1)
+    monkeypatch.setattr(plugin, "jsonrpc", lambda method, params: {"value": 1})
     monkeypatch.setattr(xbmcvfs, "translatePath", lambda p: "/custom/subs" if p == "special://subtitles" else "")
     assert plugin.fanout_folder("/videos/Show") == "/custom/subs"
-    monkeypatch.setattr(plugin, "player_setting", lambda sid: 0)
+    monkeypatch.setattr(plugin, "jsonrpc", lambda method, params: {"value": 0})
     assert plugin.fanout_folder("/videos/Show") == "/videos/Show"
-    monkeypatch.setattr(plugin, "player_setting", lambda sid: None)  # lookup failed
+    monkeypatch.setattr(plugin, "jsonrpc", lambda method, params: {})  # lookup failed
     assert plugin.fanout_folder("/videos/Show") == "/videos/Show"

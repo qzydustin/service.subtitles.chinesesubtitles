@@ -42,8 +42,8 @@ def _extract_zip(path):
                 name = os.path.basename(name)
                 if name.lower().endswith(SUBTITLE_EXTS + SUBTITLE_SIDECAR_EXTS):
                     entries.append((name, info))
-            if not entries:
-                return None, []
+            if not any(name.lower().endswith(SUBTITLE_EXTS) for name, _ in entries):
+                return None, []  # sidecars alone are not a subtitle download
             target = path + "_extracted"
             os.makedirs(target, exist_ok=True)
             for name, info in entries:

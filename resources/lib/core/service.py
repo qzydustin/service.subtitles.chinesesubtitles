@@ -50,13 +50,10 @@ def order_works(rows, query=None):
     except ValueError:
         target = None
 
-    def year_distance(w):
-        # provider years come from a (19|20)xx regex, so int() always holds
-        return abs(int(w.year) - target) if (target is not None and w.year) else 9999
-
+    # provider years come from a (19|20)xx regex, so int() always holds
     rows.sort(key=lambda w: (
         0 if (season and str(w.season or "") == season) else 1,
-        year_distance(w),
+        abs(int(w.year) - target) if (target is not None and w.year) else 9999,
         0 if "subhd" in w.anchors else 1,
     ))
     return rows

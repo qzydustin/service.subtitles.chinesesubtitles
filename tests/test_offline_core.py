@@ -412,8 +412,9 @@ def test_filter_sorts_by_language_then_source():
 # ---- autosave ----
 
 def test_episode_marker_variants():
-    from core.autosave import episode_marker
+    from core.matcher import episode_marker
     assert episode_marker("Show.S02E05.720p") == (2, 5)
+    assert episode_marker("Show.S02.E05.720p") == (2, 5)  # dot-separated form
     assert episode_marker("第12集") == (None, 12)
     assert episode_marker("someone.EP3.x264") == (None, 3)
     assert episode_marker("Movie.2010.1080p") == (None, None)

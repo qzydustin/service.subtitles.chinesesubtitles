@@ -2,30 +2,15 @@
 """Naming downloaded subtitles after their videos so Kodi auto-loads them."""
 import re
 
+from .matcher import episode_marker
+
 VIDEO_EXTS = (".mkv", ".mp4", ".avi", ".wmv", ".mpg", ".mpeg", ".ts", ".m2ts",
               ".mts", ".flv", ".webm", ".mov", ".iso", ".vob", ".rmvb", ".strm")
 
-SE_EP_MARK_RE = re.compile(r'[sS](\d{1,2})\s*[eE](\d{1,3})\b')
-EP_MARK_RE = re.compile(r'\b[eE][pP]?(\d{1,3})\b')
-CN_EP_MARK_RE = re.compile(r'第\s*(\d{1,3})\s*[集话話]')
 _LANG_CODE = r'(?:chs|cht|chi|eng|zho|jpn|kor|sc|tc)'
 LANG_TAG_RE = re.compile(r'(?:^|[.\-_ ])(' + _LANG_CODE + r'(?:[&+]' + _LANG_CODE + r')*)'
                          r'(?![a-z0-9])', re.I)
 CN_LANG_TAG_RE = re.compile(r'简体|繁体|繁體|简英|繁英|中英|双语|简|繁')
-
-
-def episode_marker(name):
-    """(season, episode) ints carried by a filename; either may be None."""
-    m = SE_EP_MARK_RE.search(name)
-    if m:
-        return int(m.group(1)), int(m.group(2))
-    m = EP_MARK_RE.search(name)
-    if m:
-        return None, int(m.group(1))
-    m = CN_EP_MARK_RE.search(name)
-    if m:
-        return None, int(m.group(1))
-    return None, None
 
 
 def lang_tag(name):

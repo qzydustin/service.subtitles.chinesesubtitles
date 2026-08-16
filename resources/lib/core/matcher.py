@@ -61,9 +61,25 @@ def works_match(a, b):
 
 # trailing season marker in folder names: "电锯人 第一季", "Show Season 2", "Show S02"
 FOLDER_SEASON_RE = re.compile(rf'(?:{_CN_SEASON}|{_WORD_SEASON}|S(\d{{1,2}}))\s*$', re.I)
-SE_EP_RE = re.compile(r'[sS](\d{1,2})[eE](\d{1,3})\b')
+SE_EP_RE = re.compile(r'[sS](\d{1,2})[.\s]*[eE](\d{1,3})\b')
+EP_MARK_RE = re.compile(r'\b[eE][pP]?(\d{1,3})\b')  # lone episode: E05 / EP05
+CN_EP_MARK_RE = re.compile(r'第\s*(\d{1,3})\s*[集话話]')
 CN_SEASON_EP_RE = re.compile(rf'第([{_CN_DIGITS}\d]+)季.*?第\s*(\d+)\s*集')
 YEAR_TOKEN_RE = re.compile(rf'^{_CENTURY}$')
+
+
+def episode_marker(name):
+    """(season, episode) ints carried by a filename; either may be None."""
+    m = SE_EP_RE.search(name)
+    if m:
+        return int(m.group(1)), int(m.group(2))
+    m = EP_MARK_RE.search(name)
+    if m:
+        return None, int(m.group(1))
+    m = CN_EP_MARK_RE.search(name)
+    if m:
+        return None, int(m.group(1))
+    return None, None
 
 # release tags stripped from parsed titles, grouped by what they describe;
 # the sub runs on tokens already split on . _ - space, so only dot-free
@@ -89,13 +105,6 @@ def _any_of(tags):
 RELEASE_JUNK_RE = re.compile(_any_of(sum(JUNK_TAGS.values(), ())), re.I)
 
 
-def _strip_extension(name):
-    dot = name.rfind(".")
-    if dot > 0:
-        name = name[:dot]
-    return name
-
-
 def parse_filename(name):
     """Extract {title, year, season, episode} from a release filename.
 
@@ -106,7 +115,10 @@ def parse_filename(name):
     Fields stay empty when nothing parses.
     """
     out = {"title": "", "year": "", "season": "", "episode": ""}
-    name = _strip_extension((name or "").strip())
+    name = (name or "").strip()
+    dot = name.rfind(".")
+    if dot > 0:
+        name = name[:dot]
     if not name:
         return out
 

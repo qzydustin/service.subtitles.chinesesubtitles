@@ -17,9 +17,9 @@ if _LIB_DIR not in sys.path:
 
 from core import service
 from core.archive import SUBTITLE_EXTS, shorten_names
-from core.autosave import VIDEO_EXTS, episode_marker, playback_pick, rename_map
+from core.autosave import VIDEO_EXTS, playback_pick, rename_map
 from core.filter import apply_filters
-from core.matcher import FOLDER_SEASON_RE, parse_filename, season_number
+from core.matcher import FOLDER_SEASON_RE, episode_marker, parse_filename, season_number
 from core.models import FORMATS, LANGS, SOURCES, WorkQuery, build_label, language_meta
 
 __addon__ = xbmcaddon.Addon()
@@ -139,20 +139,13 @@ def show_original_title():
 
     The episode tag exposes no original show title (only getTVShowTitle),
     so ask the video library via JSON-RPC; '' when unavailable."""
-    try:
-        dbid = xbmc.getInfoLabel("VideoPlayer.TvShowDBID")
-        if not dbid or not dbid.isdigit():
-            return ""
-        reply = json.loads(xbmc.executeJSONRPC(json.dumps({
-            "jsonrpc": "2.0", "id": 1,
-            "method": "VideoLibrary.GetTVShowDetails",
-            "params": {"tvshowid": int(dbid), "properties": ["originaltitle"]},
-        })))
-        details = reply.get("result", {}).get("tvshowdetails", {})
-        return details.get("originaltitle", "").strip()
-    except Exception as e:
-        log(f"library lookup for show original title failed: {e}", xbmc.LOGWARNING)
+    dbid = xbmc.getInfoLabel("VideoPlayer.TvShowDBID")
+    if not dbid or not dbid.isdigit():
         return ""
+    details = jsonrpc("VideoLibrary.GetTVShowDetails",
+                      {"tvshowid": int(dbid),
+                       "properties": ["originaltitle"]}).get("tvshowdetails", {})
+    return details.get("originaltitle", "").strip()
 
 
 def current_query():
@@ -234,16 +227,15 @@ def list_subtitles(subtitles):
         xbmcplugin.addDirectoryItem(handle=handle, url=url, listitem=item, isFolder=False)
 
 
-def player_setting(setting_id):
-    """Read a Kodi player setting via JSON-RPC; None on any failure."""
+def jsonrpc(method, params):
+    """One JSON-RPC roundtrip; {} when anything fails."""
     try:
         reply = json.loads(xbmc.executeJSONRPC(json.dumps({
-            "jsonrpc": "2.0", "id": 1, "method": "Settings.GetSettingValue",
-            "params": {"setting": setting_id}})))
-        return reply.get("result", {}).get("value")
+            "jsonrpc": "2.0", "id": 1, "method": method, "params": params})))
+        return reply.get("result", {})
     except Exception as e:
-        log(f"read setting {setting_id} failed: {e}", xbmc.LOGWARNING)
-        return None
+        log(f"JSON-RPC {method} failed: {e}", xbmc.LOGWARNING)
+        return {}
 
 
 def fanout_folder(video_folder):
@@ -251,7 +243,9 @@ def fanout_folder(video_folder):
     mode: the custom subtitle folder when chosen (usually because the video
     folder is read-only), else next to the video. Both places are scanned
     for external subtitles at playback."""
-    if player_setting("subtitles.storagemode") == 1:
+    mode = jsonrpc("Settings.GetSettingValue",
+                   {"setting": "subtitles.storagemode"}).get("value")
+    if mode == 1:
         return xbmcvfs.translatePath("special://subtitles")
     return video_folder
 
@@ -281,7 +275,9 @@ def autosave(result):
         return ""
     siblings = [os.path.splitext(f)[0] for f in files if f.lower().endswith(VIDEO_EXTS)]
     mapping = rename_map(result.files, stem, siblings, season=episode_marker(stem)[0])
-    picked = playback_pick(mapping, stem, preferred=lang_preference())
+    settings = filter_settings()
+    preferred = tuple(l for l in LANGS if settings.get(f"filter_lang_{l}")) or LANGS
+    picked = playback_pick(mapping, stem, preferred=preferred)
 
     folder = fanout_folder(video_folder)
     fallback = xbmcvfs.translatePath("special://subtitles")
@@ -313,14 +309,6 @@ def autosave(result):
     if not picked:
         return ""
     return result.paths[result.files.index(picked)]
-
-
-def lang_preference():
-    """Enabled filter languages in canonical order; a sensible default when
-    everything is off."""
-    settings = filter_settings()
-    langs = tuple(l for l in LANGS if settings.get(f"filter_lang_{l}"))
-    return langs or LANGS
 
 
 def do_download(link, provider):
