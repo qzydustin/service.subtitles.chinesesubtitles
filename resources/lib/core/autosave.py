@@ -25,6 +25,17 @@ def lang_tag(name):
 LANG_HINTS = {"chs": ("chs", "简体", "简", "sc"), "cht": ("cht", "繁體", "繁体", "tc", "繁"),
               "eng": ("eng",)}
 
+_CH_CODE = r'(?:chs|cht|chi|zho|sc|tc)'
+BILINGUAL_RE = re.compile(
+    r'双语|(?:中|[简繁][体體]?)\s*[&+]?\s*英'
+    r'|(?:^|[.\-_ ])' + _CH_CODE + r'[&+.\-_ ]eng(?![a-z0-9])'
+    r'|(?:^|[.\-_ ])eng[&+.\-_ ]' + _CH_CODE + r'(?![a-z0-9])', re.I)
+
+
+def is_bilingual(name):
+    """Whether a filename marks a Chinese+English twin (chs&eng, 简英, 双语...)."""
+    return bool(BILINGUAL_RE.search(name))
+
 
 def _tagged_stem(stem, name, used):
     tag = lang_tag(name)
@@ -77,17 +88,44 @@ def rename_map(sub_names, video_stem, sibling_stems, season=None):
     return mapping
 
 
-def playback_pick(mapping, video_stem, preferred=("chs", "cht", "eng")):
-    """The downloaded file to load right now: among the entries saved under
-    the playing video's stem, the first language match in `preferred`
-    order (falling back to the first entry). '' when nothing maps to the
-    playing video."""
+def variant_rank(name, preferred=("chs", "cht", "eng")):
+    """Sort key among language twins: earliest `preferred` language first,
+    a bilingual name beating a single-language one at the same rank
+    (mirroring the search listing's bilingual-first sort)."""
+    low = name.lower()
+    tier = next((i for i, lang in enumerate(preferred)
+                 if any(h in low for h in LANG_HINTS.get(lang, ()))), len(preferred))
+    return (tier, 0 if is_bilingual(name) else 1)
+
+
+def playback_candidates(mapping, video_stem, preferred=("chs", "cht", "eng")):
+    """The entries saved under the playing video's stem, best variant first.
+    The caller loads the first — or asks the user when several compete.
+    Empty when nothing maps to the playing video."""
     candidates = [name for name, stem in mapping.items()
                   if stem == video_stem or stem.startswith(video_stem + ".")]
-    if not candidates:
-        return ""
-    for lang in preferred:
-        for name in candidates:
-            if any(h in name.lower() for h in LANG_HINTS.get(lang, ())):
-                return name
-    return candidates[0]
+    return sorted(candidates, key=lambda n: variant_rank(n, preferred))
+
+
+def playback_pick(mapping, video_stem, preferred=("chs", "cht", "eng")):
+    """The single best file to load right now; '' when nothing maps."""
+    candidates = playback_candidates(mapping, video_stem, preferred)
+    return candidates[0] if candidates else ""
+
+
+def fanout_names(mapping, picked, video_stem="", preferred=("chs", "cht", "eng")):
+    """Trim a pack's rename map to what should be copied out once `picked`
+    loads: one file per remaining video — the picked file's language variant
+    when that video has one, else the video's best variant — keeping the
+    fan-out folders to a single twin. Everything mapped to the playing
+    video's stem is excluded (the player stores the pick)."""
+    tag = lang_tag(picked)
+    groups = {}
+    for name, stem in mapping.items():
+        if name == picked or (video_stem and
+                              (stem == video_stem or stem.startswith(video_stem + "."))):
+            continue
+        groups.setdefault(episode_marker(name), []).append(name)
+    return [min([n for n in names if lang_tag(n) == tag] or names,
+                key=lambda n: variant_rank(n, preferred))
+            for names in groups.values()]

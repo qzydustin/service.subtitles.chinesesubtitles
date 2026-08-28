@@ -17,7 +17,7 @@ if _LIB_DIR not in sys.path:
 
 from core import service
 from core.archive import SUBTITLE_EXTS, shorten_names
-from core.autosave import VIDEO_EXTS, playback_pick, rename_map
+from core.autosave import VIDEO_EXTS, fanout_names, playback_candidates, rename_map
 from core.filter import apply_filters
 from core.matcher import FOLDER_SEASON_RE, episode_marker, parse_filename, season_number
 from core.models import FORMATS, LANGS, SOURCES, WorkQuery, build_label, language_meta
@@ -257,8 +257,10 @@ def autosave(result):
 
     The returned file itself is NOT copied here: Kodi core stores it under
     the player's subtitle storage settings, which this addon shouldn't
-    second-guess. Everything else in the download — other episodes of a
-    pack, language twins — core never touches, so those are copied here.
+    second-guess. Other episodes of a pack are copied here — one file per
+    episode, in the picked file's language variant. When several variants
+    map to the playing video (简/繁/双语 twins), a dialog asks which to
+    load; a single match stays fully automatic.
     """
     try:
         video_path = xbmc.Player().getPlayingFile()
@@ -278,7 +280,17 @@ def autosave(result):
     mapping = rename_map(result.files, stem, siblings, season=episode_marker(stem)[0])
     settings = filter_settings()
     preferred = tuple(l for l in LANGS if settings.get(f"lang_{l}")) or LANGS
-    picked = playback_pick(mapping, stem, preferred=preferred)
+    candidates = playback_candidates(mapping, stem, preferred=preferred)
+    picked = candidates[0] if candidates else ""
+    if len(candidates) > 1:
+        # several variants of the playing video: the user decides which to
+        # load (cancel keeps the best-ranked one); the same variant then
+        # fans out to the other episodes below
+        display = (shorten_names(candidates)
+                   if __addon__.getSetting("cutsubfn") == "true" else candidates)
+        sel = choose("Choose Subtitle", display)
+        if sel is not None:
+            picked = candidates[sel]
 
     folder = fanout_folder(video_folder)
     fallback = xbmcvfs.translatePath("special://subtitles")
@@ -304,12 +316,10 @@ def autosave(result):
             if xbmcvfs.exists(idx_src) and xbmcvfs.copy(idx_src, idx_dst):
                 log(f"autosave: {os.path.basename(idx_src)} -> {idx_dst}")
 
-    for name, path in zip(result.files, result.paths):
-        if mapping.get(name) and name != picked:
-            copy_out(path, mapping[name] + os.path.splitext(name)[1].lower())
-    if not picked:
-        return ""
-    return result.paths[result.files.index(picked)]
+    paths = dict(zip(result.files, result.paths))
+    for name in fanout_names(mapping, picked, video_stem=stem, preferred=preferred):
+        copy_out(paths[name], mapping[name] + os.path.splitext(name)[1].lower())
+    return paths[picked] if picked else ""
 
 
 def do_download(link, provider):
