@@ -71,8 +71,7 @@ class SubhdProvider:
                     category = "general"
             elif "row" in classes:
                 if target_episode:
-                    target = int(target_episode) if str(target_episode).isdigit() else target_episode
-                    if category == target or str(category) == str(target_episode):
+                    if str(category) == str(target_episode):
                         is_collection = False
                     elif category == "collection":
                         is_collection = True
@@ -170,7 +169,7 @@ class SubhdProvider:
             if resp.status_code != 200:
                 return DownloadResult()
             data = resp.json()
-            if data.get("pass") == False:
+            if data.get("pass") is False:
                 # throttle refusal, plain text like '下载频率过高，请不要再试'
                 # (the old-site SVG captcha is gone: no captcha code remains
                 # in the site's JS bundles); the one-time temp page is spent,

@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 """Zimuku (zimuku.org) subtitle provider, including its BMP captcha solver."""
 import base64
-import html
 import re
 import struct
 import urllib.parse
@@ -288,7 +287,7 @@ class ZimukuProvider:
                     continue
                 name = filename_from_headers(resp.headers.get("Content-Disposition"), url=file_url)
                 if name and len(resp.content) > FILE_MIN_SIZE:
-                    filename, file_data = html.unescape(name), resp.content
+                    filename, file_data = name, resp.content
                     break
             except Exception as e:
                 self.log(f"zimuku: download {file_url} failed: {e}")

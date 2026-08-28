@@ -33,15 +33,20 @@ def _extract_zip(path):
     """Extract subtitle entries from a zip, recovering GBK-mojibake filenames."""
     try:
         with zipfile.ZipFile(path, "r") as zf:
-            entries = []
+            entries, seen = [], set()
             for info in zf.infolist():
                 if info.is_dir():
                     continue
                 # Without the UTF-8 flag zipfile decodes names as cp437
                 name = info.filename if (info.flag_bits & 0x800) else fix_zip_filename(info.filename)
                 name = os.path.basename(name)
-                if name.lower().endswith(SUBTITLE_EXTS + SUBTITLE_SIDECAR_EXTS):
-                    entries.append((name, info))
+                # entries are flattened to basenames: a same-named file in
+                # another folder would overwrite the first, so keep only that
+                if name in seen or not name.lower().endswith(
+                        SUBTITLE_EXTS + SUBTITLE_SIDECAR_EXTS):
+                    continue
+                seen.add(name)
+                entries.append((name, info))
             if not any(name.lower().endswith(SUBTITLE_EXTS) for name, _ in entries):
                 return None, []  # sidecars alone are not a subtitle download
             target = path + "_extracted"

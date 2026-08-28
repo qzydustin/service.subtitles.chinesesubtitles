@@ -87,6 +87,18 @@ def test_extract_zip_skips_non_subtitles():
         assert files == []
 
 
+def test_extract_zip_dedupes_flattened_basenames():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        zip_path = os.path.join(tmpdir, 'test.zip')
+        with zipfile.ZipFile(zip_path, 'w') as zf:
+            zf.writestr('a/Movie.srt', 'first')
+            zf.writestr('b/Movie.srt', 'second')
+        target, files = _extract_zip(zip_path)
+        assert files == ['Movie.srt']  # the second would overwrite the first
+        with open(os.path.join(target, 'Movie.srt')) as f:
+            assert f.read() == 'first'
+
+
 def test_extract_zip_keeps_vobsub_sidecar():
     with tempfile.TemporaryDirectory() as tmpdir:
         zip_path = os.path.join(tmpdir, 'test.zip')

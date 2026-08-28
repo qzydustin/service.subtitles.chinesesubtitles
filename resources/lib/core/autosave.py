@@ -27,7 +27,7 @@ LANG_HINTS = {"chs": ("chs", "简体", "简", "sc"), "cht": ("cht", "繁體", "�
 
 _CH_CODE = r'(?:chs|cht|chi|zho|sc|tc)'
 BILINGUAL_RE = re.compile(
-    r'双语|(?:中|[简繁][体體]?)\s*[&+]?\s*英'
+    r'双语|(?:中文?|[简繁][体體]?(?:中文)?)\s*[&+]?\s*英'
     r'|(?:^|[.\-_ ])' + _CH_CODE + r'[&+.\-_ ]eng(?![a-z0-9])'
     r'|(?:^|[.\-_ ])eng[&+.\-_ ]' + _CH_CODE + r'(?![a-z0-9])', re.I)
 
@@ -105,12 +105,6 @@ def playback_candidates(mapping, video_stem, preferred=("chs", "cht", "eng")):
     candidates = [name for name, stem in mapping.items()
                   if stem == video_stem or stem.startswith(video_stem + ".")]
     return sorted(candidates, key=lambda n: variant_rank(n, preferred))
-
-
-def playback_pick(mapping, video_stem, preferred=("chs", "cht", "eng")):
-    """The single best file to load right now; '' when nothing maps."""
-    candidates = playback_candidates(mapping, video_stem, preferred)
-    return candidates[0] if candidates else ""
 
 
 def fanout_names(mapping, picked, video_stem="", preferred=("chs", "cht", "eng")):
