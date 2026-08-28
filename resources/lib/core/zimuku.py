@@ -206,6 +206,8 @@ class ZimukuProvider:
             production = "剧集" if query.is_tv else "电影"
             matches_episode = self._episode_filter(query.season, query.episode)
             for row in reversed(box.tbody.find_all("tr")):
+                if not row.a:  # a linkless row must not sink the whole page
+                    continue
                 include, collection = matches_episode(row.a.text)
                 if include:
                     subs.append(self._parse_row(row, production, collection))

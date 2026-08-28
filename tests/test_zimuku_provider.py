@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
-"""Live tests for the Zimuku provider: work discovery, TV search, download."""
+"""Zimuku provider tests: live work discovery, TV search, download,
+plus offline page-parsing regressions."""
 import os
 import sys
 import tempfile
@@ -11,6 +12,20 @@ if lib_dir not in sys.path:
 
 from core.models import WorkQuery, build_label
 from core.zimuku import ZimukuProvider
+
+
+def test_zimuku_work_page_skips_linkless_rows(monkeypatch):
+    # offline: one linkless row (ad/placeholder) must not sink the page
+    html = """
+    <div class="subs box clearfix"><table><tbody>
+      <tr><td>placeholder without a link</td></tr>
+      <tr><td><a href="/detail/1.html">Show.S01E01.srt</a></td></tr>
+    </tbody></table></div>
+    """
+    provider = ZimukuProvider()
+    monkeypatch.setattr(provider, "_get", lambda url, referer=None: html.encode())
+    _, subs = provider.work_page(WorkQuery(title="x"), "https://zimuku.org/subs/1.html")
+    assert [s.filename for s in subs] == ["Show.S01E01.srt"]
 
 
 def test_zimuku_find_works():

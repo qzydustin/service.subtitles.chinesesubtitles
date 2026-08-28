@@ -6,7 +6,9 @@ from .http import noop_log
 from .subhd import SubhdProvider
 from .zimuku import ZimukuProvider
 
-# Providers are cheap to build; one entry point constructs what it needs.
+# Provider sessions carry site state (Zimuku's WAF marks a solved captcha
+# in a session cookie), so one resolution flow shares one instance instead
+# of re-earning the verification per fetch.
 PROVIDERS = {"subhd": SubhdProvider, "zimuku": ZimukuProvider}
 
 
@@ -27,7 +29,7 @@ def order_works(rows, query=None):
     return rows
 
 
-def _zimuku_rows(query, log):
+def _zimuku_rows(zimuku, query, log):
     """Search Zimuku for works, walking a query ladder until rows appear.
 
     Measured: the bilingual combined title leaves few junk rows ("Friends"
@@ -38,7 +40,6 @@ def _zimuku_rows(query, log):
     """
     attempts = ([f"{query.title} {query.year}"] if query.year else []) \
         + [query.title] + [t for t in query.alt_titles if t]
-    zimuku = PROVIDERS["zimuku"](log=log)
     for i, title in enumerate(dict.fromkeys(attempts)):
         if i:
             log(f"no works for '{query.title}', retrying with '{title}'")
@@ -66,7 +67,8 @@ def resolve_work(query, choose=None, log=noop_log):
     the picker is cancelled. A single row skips the picker;
     `choose(title, options)` otherwise decides (headless default: first).
     """
-    rows = _zimuku_rows(query, log)
+    zimuku = PROVIDERS["zimuku"](log=log)
+    rows = _zimuku_rows(zimuku, query, log)
     if not rows:
         return None
     if len(rows) == 1:
@@ -76,11 +78,11 @@ def resolve_work(query, choose=None, log=noop_log):
         if index is None or not 0 <= index < len(rows):
             return None
         work = rows[index]
-    _bridge(query, work, log)
+    _bridge(zimuku, query, work, log)
     return work
 
 
-def _bridge(query, work, log):
+def _bridge(zimuku, query, work, log):
     """Fetch the picked Zimuku page once: its Douban id becomes the SubHD
     anchor and its subtitles preload the work, so search_all only has to
     fetch SubHD. A page without an id (or an unreachable one) leaves the
@@ -90,7 +92,7 @@ def _bridge(query, work, log):
     if not url:
         return
     try:
-        douban, subs = PROVIDERS["zimuku"](log=log).work_page(query, url)
+        douban, subs = zimuku.work_page(query, url)
     except Exception as e:
         log(f"zimuku: work page fetch failed: {e}")
         return

@@ -343,6 +343,9 @@ def do_download(link, provider):
     display = result.display_names if __addon__.getSetting("cutsubfn") == "true" else result.files
     sel = choose("Choose Subtitle", display)
     if sel is None:
+        # cancel falls back to the first entry, mirroring autosave's
+        # cancel-keeps-best: Kodi already committed to loading a subtitle
+        # for this listing pick, so returning nothing would be a dead end
         sel = 0
     return [result.paths[min(sel, len(result.paths) - 1)]]
 
