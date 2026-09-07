@@ -17,9 +17,10 @@ if _LIB_DIR not in sys.path:
 
 from core import service
 from core.archive import SUBTITLE_EXTS, shorten_names
-from core.autosave import VIDEO_EXTS, fanout_names, playback_candidates, rename_map
+from core.autosave import fanout_names, playback_candidates, rename_map
 from core.filter import apply_filters
-from core.matcher import FOLDER_SEASON_RE, episode_marker, parse_filename, season_number
+from core.matcher import (FOLDER_SEASON_RE, VIDEO_EXTS, episode_marker, parse_filename,
+                          season_number)
 from core.models import FORMATS, LANGS, SOURCES, WorkQuery, build_label, language_meta
 
 __addon__ = xbmcaddon.Addon()
@@ -102,9 +103,12 @@ GENERIC_FOLDERS = {"movie", "movies", "tv", "tvshows", "shows", "series",
 
 
 def _hashlike(title):
-    """Release-name residue like 'bd26e8f2b1ee': no spaces, digits and letters mixed."""
-    return (len(title) >= 8 and " " not in title
-            and any(c.isdigit() for c in title) and any(c.isalpha() for c in title))
+    """Release-name residue rather than a title: a hash blob ('bd26e8f2b1ee')
+    plus whatever tag stripping left beside it ('DL', '5') — digits somewhere
+    and no token that reads as a word (3+ letters, or any non-ASCII script)."""
+    return (any(c.isdigit() for c in title)
+            and not any(t.isalpha() and (len(t) > 2 or not t.isascii())
+                        for t in title.split()))
 
 
 def release_query(stem, folder):

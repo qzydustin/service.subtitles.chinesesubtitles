@@ -41,6 +41,9 @@ def parse_meta(title):
 
 # ---- filename parsing (fallback for unscraped media) ----
 
+VIDEO_EXTS = (".mkv", ".mp4", ".avi", ".wmv", ".mpg", ".mpeg", ".ts", ".m2ts",
+              ".mts", ".flv", ".webm", ".mov", ".iso", ".vob", ".rmvb", ".strm")
+
 # trailing season marker in folder names: "电锯人 第一季", "Show Season 2", "Show S02"
 FOLDER_SEASON_RE = re.compile(rf'(?:{_CN_SEASON}|{_WORD_SEASON}|S(\d{{1,2}}))\s*$', re.I)
 SE_EP_RE = re.compile(r'[sS](\d{1,2})[.\s]*[eE](\d{1,3})\b')
@@ -98,9 +101,8 @@ def parse_filename(name):
     """
     out = {"title": "", "year": "", "season": "", "episode": ""}
     name = (name or "").strip()
-    dot = name.rfind(".")
-    if dot > 0:
-        name = name[:dot]
+    if name.lower().endswith(VIDEO_EXTS):  # only a real extension; "Show.2024" keeps its year
+        name = name[:name.rfind(".")]
     if not name:
         return out
 

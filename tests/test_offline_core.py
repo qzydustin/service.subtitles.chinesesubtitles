@@ -292,6 +292,8 @@ def test_parse_filename_scene_tv():
 def test_parse_filename_movie_year():
     out = parse_filename("Movie.Name.2010.1080p.BluRay.mkv")
     assert out == {"title": "Movie Name", "year": "2010", "season": "", "episode": ""}
+    # a trailing year is not an extension (season-stripped folder "Show.2024")
+    assert parse_filename("Movie.Name.2010")["year"] == "2010"
 
 
 def test_parse_filename_chinese_season_episode():

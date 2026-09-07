@@ -2,10 +2,7 @@
 """Naming downloaded subtitles after their videos so Kodi auto-loads them."""
 import re
 
-from .matcher import episode_marker
-
-VIDEO_EXTS = (".mkv", ".mp4", ".avi", ".wmv", ".mpg", ".mpeg", ".ts", ".m2ts",
-              ".mts", ".flv", ".webm", ".mov", ".iso", ".vob", ".rmvb", ".strm")
+from .matcher import VIDEO_EXTS, episode_marker
 
 _LANG_CODE = r'(?:chs|cht|chi|eng|zho|jpn|kor|sc|tc)'
 LANG_TAG_RE = re.compile(r'(?:^|[.\-_ ])(' + _LANG_CODE + r'(?:[&+]' + _LANG_CODE + r')*)'

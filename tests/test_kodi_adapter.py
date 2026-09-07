@@ -161,6 +161,17 @@ def test_query_hash_filename_generic_folder_not_used(monkeypatch):
     assert query.title == "bd26e8f2b1ee9c"
 
 
+def test_query_id_filename_with_tag_residue_rescued_by_folder(monkeypatch):
+    # regression: an id filename parses to "1234567890abcdef DL 5" — spaced
+    # residue that slipped past the hash check and was searched verbatim,
+    # returning unrelated works; the folder (year included) must win
+    path = "/media/TV/动物的秘密生活.2024.S01/1234567890abcdef.WEB-DL.DV.H265.DDP.5.1.strm"
+    with_player(monkeypatch, FakePlayer(FakeTag(), path=path))
+    query = plugin.current_query()
+    assert query == plugin.WorkQuery(title="动物的秘密生活", year="2024",
+                                     season="1", is_tv=True)
+
+
 def test_query_specials_drop_season_zero(monkeypatch):
     tag = FakeTag(tvshow="神秘博士", season=0, episode=3, year=2005)
     with_player(monkeypatch, FakePlayer(tag, "x.mkv"))
